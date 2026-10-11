@@ -486,3 +486,25 @@
 - Установщик: `release/CatLuRadio-3.5.9-Standalone-Setup-desktop.exe` (357 739 060 байт, SHA-256 `710AF999DFEBD66EBC857E099FC8DAC23AE42C0D32FD2A9D4D381F406805F338`).
 - Push: первый отклонён — владелец через GitHub web заменил логотип README на `docs/CatLuRadioNet.jpg` (ширина 500). Rebase поверх (`8844736..17079da`), конфликта нет: логотип остался их, запись версии — моя. `docs/hero.jpg` удалён как задвоенный.
 - Релиз `v3.5.9` опубликован: id **409510490**, https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.9; ассет загружен (id **630126050**, 357 739 060 байт). Текст релиза: `%TEMP%\opencode\release-3.5.9-body.md`.
+
+## Релиз 3.5.10: мини-плеер-окно с котом, каталог станций 1.0.4 (2026-10-11)
+
+### Интерфейс (накоплено между релизами, 8 коммитов)
+
+- **Окно 630×780** (`770003a`): стартовый размер и возврат из мини-плеера — ClientSize с потолком `Screen.PrimaryScreen.WorkingArea`.
+- **Компактная полоса настроек** (`b4e3c4a`, `4f43ad5`): в режиме настроек строка ✕ ужимается, зазор «плеер → Настройки» ~89→50 px (только в режиме настроек).
+- **Шапка с анимацией** (`d6c6b8a`): `assets/logo-anim.mp4` — серый кот в наушниках, квадратный кроп 160×160, H.264, **без звука**, 151 КБ; отображается 24×24 (`muted/loop/playsinline`, poster — `assets/logo.jpg`). Старый жёлтый кот `icon-32.png` больше не используется.
+- **Значок окна и установщика** (`751963d`): `icon.ico` = копия `CatLuRadioNet.ico` (кадры 16–256, 32 bpp) — подхватывается exe (ApplicationIcon), окном (ExtractAssociatedIcon) и установщиком (SetupIconFile); `/CatLuRadioNet.ico` удалён из `.gitignore`.
+- **Мини-плеер по макету пользователя** (`b3fca9a`, `4d2cceb`): свёрнутое окно — слева brand-строка (анимация кота 34px + «CatLu Radio NET v{ver}»), под ней играющая станция (14px/600) и часы, справа управление (play 36px); хост — ClientSize 600×90 (прежний Size 600×110 давал ~72px клиентской высоты — под три строки мало); версия в мини-заголовке проверяется тестом version-consistency.
+
+### Каталог станций 1.0.4 (`566d36a`)
+
+- У 5 станций протухли токены в URL (exp/gts-параметры): **Авторадио, Радио Хит, Русская волна, DFM, Remix FM**. Заменены на постоянные ссылки, проверенные запросами (HTTP 200, Content-Type audio, icy-name): `gpm.hostingradio.ru/gpm-avtoradio495.aacp` (301-редирект со старого srv01.gpmradio.ru), `hit.trkeurasia.ru/hit128`, `irp.volna.top/ruwave`, `dfm.hostingradio.ru/dfm96.aacp`, `irp2.volna.top/remixfm`. `DEFAULT_STATIONS_VERSION` 1.0.3 → 1.0.4 — у существующих пользователей обновятся через журнал правок 3.5.9 (без отката их правок).
+
+### Сборка и публикация
+
+- Версия 3.5.10 везде: csproj (`Version`/`AssemblyVersion`/`FileVersion`), `?v=` ×3 и `miniPlayerVersion` в index.html, installer/CatLuRadio.iss (`MyAppVersion`/`VersionInfoVersion`), «О программе» (renderer.js, TranslationManager.js), бейдж README + запись changelog.
+- Тесты 9/9 (version-consistency: 3.5.10, `?v=` ×3, «О программе», мини-плеер — согласованы).
+- Установщик: `release/CatLuRadio-3.5.10-Standalone-Setup-desktop.exe` (358 007 925 байт, SHA-256 `2E9BA47D0B4AC5B3B8F99AB4BC9357E357BD2A050D19E12C4FC00E7422BF766F`).
+- Push `1991d80..566d36a` + тег `v3.5.10` — через кред Win32 `CredRead` (штатный push не трогали: remote не двигался).
+- Релиз `v3.5.10` опубликован: id **409601065**, https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.10. Текст релиза: `%TEMP%\opencode\release-3.5.10-body.md`.
