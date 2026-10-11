@@ -19,11 +19,7 @@ const ACTION_TIMEOUT_MS = {
     showOpenDialog: 10 * 60 * 1000,
     showSaveDialog: 10 * 60 * 1000,
     // Установщик качается целиком, на медленной линии это минуты.
-    installUpdate: 30 * 60 * 1000,
-    // YouTube: список плейлиста (до 200 треков) и резолв аудио-потока
-    // одного трека — на медленном соединении оба могут думать дольше 20 с.
-    resolveYoutubePlaylist: 60 * 1000,
-    resolveYoutubeTrack: 30 * 1000
+    installUpdate: 30 * 60 * 1000
 };
 
 function sendToNative(action, data = {}, timeoutMs = null) {
@@ -66,7 +62,7 @@ if (window.chrome && window.chrome.webview) {
     window.chrome.webview.addEventListener('message', (event) => {
         try {
             const data = JSON.parse(event.data);
-            // События хоста (nativeEnded и т.п.): приходят без callbackId и
+            // События хоста (nativeError и т.п.): приходят без callbackId и
             // рассылаются всем слушателям как DOM-события host:<имя>.
             if (data && typeof data.event === 'string') {
                 window.dispatchEvent(new CustomEvent('host:' + data.event, { detail: data }));
@@ -145,17 +141,11 @@ const WebView2API = {
     pauseNative: () => sendToNative('pauseNative'),
     resumeNative: () => sendToNative('resumeNative'),
     stopNative: () => sendToNative('stopNative'),
-    // Перемотка YouTube: новая позиция в миллисекундах.
-    seekNative: (ms) => sendToNative('seekNative', { ms }),
     setNativeVolume: (volume) => sendToNative('setNativeVolume', { volume }),
     setNativeEqualizer: (values) => sendToNative('setNativeEqualizer', { values }),
     // Диагностика в app.log хоста: консоль WebView2 пользователю недоступна.
     log: (message) => sendToNative('log', { message }, 5000),
-    // YouTube: список треков плейлиста при добавлении + аудио-поток трека
-    // непосредственно перед запуском (ссылки googlevideo истекают).
-    resolveYoutubePlaylist: (url) => sendToNative('resolveYoutubePlaylist', { url }),
-    resolveYoutubeTrack: (videoId) => sendToNative('resolveYoutubeTrack', { videoId }),
-    // Подписка на события хоста (например nativeEnded — трек доиграл).
+    // Подписка на события хоста (например nativeError — поток умер).
     onHostEvent: (name, handler) => window.addEventListener('host:' + name, handler),
 
     async showOpenDialog() {
@@ -261,19 +251,12 @@ window.AppAPI = {
     pauseNative: () => WebView2API.pauseNative(),
     resumeNative: () => WebView2API.resumeNative(),
     stopNative: () => WebView2API.stopNative(),
-    seekNative: (ms) => WebView2API.seekNative(ms),
     setNativeVolume: (volume) => WebView2API.setNativeVolume(volume),
     setNativeEqualizer: (values) => WebView2API.setNativeEqualizer(values),
     setNativeGain: (db) => WebView2API.setNativeGain(db),
     log: (message) => WebView2API.log(message),
-    resolveYoutubePlaylist: (url) => WebView2API.resolveYoutubePlaylist(url),
-    resolveYoutubeTrack: (videoId) => WebView2API.resolveYoutubeTrack(videoId),
-    // nativeEnded — push-событие хоста (трек доиграл в LibVLC),
-    // nativeError — поток умер посреди игры (обрыв сети, 403 от googlevideo).
-    onNativeEnded: (handler) => WebView2API.onHostEvent('nativeEnded', handler),
+    // nativeError — push-событие хоста: поток умер посреди игры.
     onNativeError: (handler) => WebView2API.onHostEvent('nativeError', handler),
-    // nativeTime — позиция/длительность трека для полосы перемотки YouTube.
-    onNativeTime: (handler) => WebView2API.onHostEvent('nativeTime', handler),
     searchOnlineStations: async (name = '', country = '', portal = 'all') => {
         const include = source => portal === 'all' || portal === source;
         let radioBrowser = [];

@@ -5,7 +5,7 @@
 //    число, иначе сломаются переводы),
 // 2) значение живёт в state.settings.gainDb и переживает перезапуск,
 // 3) мост setNativeGain отдельен от setNativeEqualizer (его сигнатура
-//    закреплена playback-guard/youtube-queue, а полосы и Preamp независимы),
+//    закреплена playback-guard, а полосы и Preamp независимы),
 // 4) хост собирает цепочку заново: полосы + Preamp, при нуле усиления и
 //    без полос — чистый проход (как в 3.5.6),
 // 5) усиление действует и при выключенном эквалайзере (плоские полосы),
@@ -66,11 +66,19 @@ assert.ok(main.includes('bool haveBands = nativeEqValues is not null'), 'Уси�
 
 // ——— 5. Переводы (EN/LT/HE) ———
 const langs = ['en:', 'lt:', 'he:'];
-for (const key of ['Усиление, дБ', 'YouTube временно отключён']) {
+for (const key of ['Усиление, дБ']) {
   const count = translations.split(key + "'").length - 1;
   // Ключ встречается один раз в каждом из трёх словарей (en/lt/he)
   assert.ok(count >= 3, `Ключ «${key}» переведён лишь ${count} раз(а) — нужны en/lt/he`);
 }
 for (const lang of langs) assert.ok(translations.includes(lang), `В словарях нет секции ${lang}`);
+
+// ——— 6. Смежный дебаунс громкости ———
+// Ползунки одной природы: десятки input в секунду не должны писать полный
+// JSON стора (проверка перенесена сюда из удалённого youtube-seek-теста).
+assert.ok(
+  renderer.includes('function scheduleVolumeSave()') && renderer.includes('function flushVolumeSave()'),
+  'Ползунок громкости без дебаунса — saveData() на каждый input писал бы JSON стора десятки раз в секунду'
+);
 
 console.log('gain-slider: OK');

@@ -278,7 +278,7 @@ body {
 /* Windows 11 Buttons */
 .btn {
   border: none;
-  padding: 7px 14px;
+  padding: 6px 12px;
   border-radius: var(--radius-btn);
   cursor: pointer;
   font-size: 13px;
@@ -678,16 +678,19 @@ body.settings-open .tab-btn-icon .close-icon {
 }
 
 .import-export-buttons .btn {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 5px 12px;
+  padding: 5px 10px;
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0.5px;
   min-height: 28px;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
 }
 
-/* Разделительная линия между секциями настроек (YouTube, станции, импорт, …) */
+/* Разделительная линия между секциями настроек (станции, импорт, …) */
 .settings-section {
   margin-top: 8px;
   padding-top: 16px;
@@ -887,11 +890,14 @@ body.settings-open .tab-btn-icon .close-icon {
 }
 
 .form-buttons .btn {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 5px 12px;
+  padding: 5px 10px;
   font-size: 13px;
   min-height: 28px;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .add-station-form h2,
@@ -1078,94 +1084,6 @@ body.settings-open .tab-btn-icon .close-icon {
   line-height: 1.4;
 }
 
-/* Перемотка YouTube: строка под названием трека в «Сейчас играет».
-   Размеры ужаты специально: колонка details ограничена overflow:hidden —
-   при щедрых отступах последняя кнопка (⏭) обрезалась (баг со скриншота
-   2026-10-08). На совсем узких колонках время прячется container-запросом,
-   кнопки остаются всегда. */
-.seek-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  padding: 2px 0;
-  container-type: inline-size;
-}
-
-.seek-btn {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--md-primary);
-  cursor: pointer;
-}
-
-.seek-btn:hover {
-  background: rgba(76, 139, 245, 0.16);
-}
-
-.seek-btn:active {
-  background: rgba(76, 139, 245, 0.3);
-}
-
-.seek-time {
-  flex-shrink: 0;
-  min-width: 26px;
-  text-align: center;
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.6);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Узкая колонка: без времени панель гарантированно влезает
-   (минимум ≈ 150px против ≈ 200px с временем). */
-@container (max-width: 250px) {
-  .seek-time {
-    display: none;
-  }
-}
-
-[data-mode="dark"] .seek-time {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.seek-track {
-  position: relative;
-  flex: 1;
-  min-width: 32px;
-  height: 7px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.12);
-  cursor: pointer;
-  touch-action: none; /* pointer-захват при перетаскивании */
-}
-
-.seek-track:hover {
-  height: 9px;
-}
-
-[data-mode="dark"] .seek-track {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.seek-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0%;
-  border-radius: 4px;
-  background: var(--md-primary);
-  pointer-events: none;
-}
-
-
 /* Windows 11 Scrollbar */
 ::-webkit-scrollbar {
   width: 12px;
@@ -1209,15 +1127,15 @@ body.settings-open .tab-btn-icon .close-icon {
 
 /* Эквалайзер */
 .equalizer-container {
-  padding: 16px;
+  padding: 10px 12px;
 }
 
 .equalizer-header {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .equalizer-header h3 {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   color: var(--md-on-surface);
   font-size: 18px;
   font-weight: 500;
@@ -1254,11 +1172,10 @@ body.settings-open .tab-btn-icon .close-icon {
   justify-content: space-between;
   align-items: flex-end;
   gap: 8px;
-  padding: 16px;
+  padding: 14px 16px;
   background: var(--md-surface);
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.12);
-  min-height: 300px;
 }
 
 [data-mode="dark"] .equalizer-bands {
@@ -1285,7 +1202,7 @@ body.settings-open .tab-btn-icon .close-icon {
 .eq-slider {
   width: 100%;
   min-width: 30px;
-  height: 200px;
+  height: 150px;
   writing-mode: vertical-lr;
   direction: rtl;
   cursor: pointer;
@@ -1402,7 +1319,7 @@ body.settings-open .tab-btn-icon .close-icon {
 }
 
 .settings-nav-btn {
-  padding: 8px 14px;
+  padding: 8px 10px;
   border: 1px solid var(--card-border);
   border-radius: var(--radius-btn);
   background: var(--card-bg);
@@ -1474,8 +1391,8 @@ body.settings-open .tab-btn-icon .close-icon {
 }
 
 .equalizer-info {
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: 10px;
+  padding: 8px 12px;
   background: var(--md-surface);
   border-radius: 4px;
   border: 1px solid rgba(0, 0, 0, 0.12);

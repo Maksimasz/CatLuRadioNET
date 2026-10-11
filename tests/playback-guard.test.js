@@ -37,7 +37,7 @@ if (!source.includes("searchOnlineStations(query, country === 'all' ? '' : count
 if (!source.includes("preview: true") || !source.includes("!station.preview")) throw new Error('Предпрослушивание не отделено от добавления');
 if (!source.includes("!state.settings.scheduler?.schedules?.[index] || !confirm(t('Удалить это расписание?'))")) throw new Error('Удаление расписания не подтверждается');
 // Событий от C# почти нет: MainForm отвечает по callbackId, а в качестве
-// push-события шлёт только nativeEnded (конец трека YouTube-очереди). Любые
+// push-события шлёт только nativeError (поток умер посреди игры). Любые
 // on*-вызовы поэтому идут через register() с typeof-проверкой: прямой
 // window.AppAPI.on* роняет init() дальше — без переводов, проверки обновлений
 // и автозапуска последней станции.
@@ -48,19 +48,19 @@ const adapter = fs.readFileSync(path.join(__dirname, '..', 'wwwroot', 'js', 'api
 const index = fs.readFileSync(path.join(__dirname, '..', 'wwwroot', 'index.html'), 'utf8');
 // Проверяем именно фасад AppAPI, а не только WebView2API: раньше привязка
 // была внутри WebView2API, фасад её не прокидывал — и окно вызова
-// window.AppAPI.setNativeEqualizer падало TypeError, роняя очередь YouTube.
+// window.AppAPI.setNativeEqualizer падало TypeError, роняя запуск станции.
 if (!source.includes('setNativeEqualizer') || !adapter.includes('setNativeEqualizer: (values) => WebView2API.setNativeEqualizer(values)')) throw new Error('Эквалайзер не передаётся в libVLC');
 // Эквалайзер применяется после старта потока (state.nativeAudio = true).
 for (const m of source.matchAll(/await window\.AppAPI\.setNativeEqualizer/g)) {
     if (source.lastIndexOf('state.nativeAudio = true;', m.index) === -1) throw new Error('Эквалайзер libVLC включается до старта потока');
 }
 // …и его вызов не фатален: сбой (нет функции, таймаут хоста) раньше
-// обрывал playYoutubeTrack до сброса isSwitching — очередь умирала после
-// первого трека, а повторный запуск молча ничего не делал.
+// обрывал запуск до сброса isSwitching — после этого повторный запуск
+// молча ничего не делал.
 if (!source.includes("catch (e) { console.warn('Эквалайзер LibVLC не применился:', e); }")) throw new Error('Сбой эквалайзера фатален для запуска станции');
 if (!adapter.includes('response.success ?? response.Success')) throw new Error('HTTP-ответ C# не приводится к формату поиска');
 // Диагностика «долго подключается» (жалоба 2026-10-09): консоль WebView2
-// пользователю недоступна, поэтому тайминги станции/YouTube и таймауты моста
+// пользователю недоступна, поэтому тайминги станции и таймауты моста
 // дублируются в app.log хоста через действие log (без петли на сам log).
 if (!adapter.includes("log: (message) => sendToNative('log', { message }, 5000)")
     || !adapter.includes('log: (message) => WebView2API.log(message)')) {
@@ -68,7 +68,6 @@ if (!adapter.includes("log: (message) => sendToNative('log', { message }, 5000)"
 }
 if (!adapter.includes('if (action !== \'log\') window.AppAPI?.log?.(')) throw new Error('Таймауты моста не дублируются в app.log');
 if (!source.includes('AppAPI.log?.(`станция «')) throw new Error('Тайминг запуска станции не логируется в app.log');
-if (!source.includes('AppAPI.log?.(`youtube трек')) throw new Error('Тайминги YouTube-трека не логируются в app.log');
 if (!source.includes('AppAPI.log?.(`init ')) throw new Error('Длительность инициализации не логируется в app.log');
 if (!adapter.includes("typeof result === 'string' ? JSON.parse(result) : result")) throw new Error('HTTP-ответ-объект повторно разбирается как JSON');
 if (!adapter.includes("success: response?.success ?? response?.Success")) throw new Error('Проверка потока не приводит поле Success из C#');

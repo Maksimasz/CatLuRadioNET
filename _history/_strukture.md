@@ -429,3 +429,26 @@
 - Опубликован релиз `v3.5.7`: https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.7 (id 407873458), установщик ассетом (id 624855590) — `releases/latest` указывает на 3.5.7. Заметки: `%TEMP%\opencode\release-3.5.7-notes.md`.
 - Коммит `7b55b2e` «Релиз 3.5.7: YouTube по флагу, ползунок усиления 0…+12 дБ» запушен в `main` прямым URL с кредом из диспетчера учётных данных (штатный `git push` и `git credential fill` в этой сессии зависали — токен прочитан через `CredRead`).
 - Кеш иконок Windows пересоздан: удалены 30 файлов `iconcache_*.db`/`thumbcache_*.db` в `%LocalAppData%` и `...\Microsoft\Windows\Explorer`, Проводник перезапущен, `ie4uinit -show` — Explorer пересобрал кеш заново.
+
+## YouTube удалён совсем, настройки ужаты под окно 2026-10-10
+
+После релиза 3.5.7 три обращения: (1) «отказываемся совсем от ютуба, убери лишний код» — полумера с флагом `YOUTUBE_ENABLED` больше не нужна, (2) «в настройках кнопки чуть по уже, они в экран не влезают», (3) «сделай плеер чуть длиннее или эквалайзер покороче — тоже не влезает в окно».
+
+### YouTube вырезан целиком
+
+- **renderer.js**: флаг `YOUTUBE_ENABLED` и хелпер `isYoutubeStation` удалены; вырезаны `playYoutubeStation`/`playYoutubeTrack`/`skipYoutubeTrack`/`stopYoutubeQueue`/`handleNativeEnded`, вся панель перемотки (`resetSeekState`/`formatSeekTime`/`handleNativeTime`/`updateSeekUI`/`setupSeekControls`), `addYoutubePlaylist`; из `playStation`/`stopPlay`/`renderStations`/`renderFavorites`/`renderHistory`/`checkAllStations`/`autoPlayLastStation`/`initUI`/`setupEventListeners`/`nativeEqualizerValues` убраны yt-ветки и фильтры (группа «YouTube» в списке больше не собирается). Остался один guard-компакт — вычистка легаси-данных в `loadData`: `isLegacyYt` (тип `youtube-playlist` или id с `yt-`) фильтрует станции, избранное и история и сохраняет всё обратно — плейлисты пользователя уходят молча, а не висят мёртвым грузом.
+- **index.html**: удалены секция #ytPlaylistSection (URL + «Добавить плейлист») и вся разметка .seek-controls под названием трека; закрывающий div now-playing-details восстановлен.
+- **api-adapter.js**: убраны `resolveYoutubePlaylist`/`resolveYoutubeTrack` (и их таймауты 60/30 с), `seekNative`, подписки `onNativeEnded`/`onNativeTime`; push-событие хоста одно — `nativeError` (обрыв потока).
+- **MainForm.cs**: удалены `case resolveYoutubePlaylist/resolveYoutubeTrack/seekNative`, `OnNativeEnded` (EndReached), `OnNativeTimeTick` (TimeChanged, дроссель 250 мс), `SendNativeTime`, `SeekNative`, `ResolveYoutubePlaylist`/`ResolveYoutubeTrack`, `TrackJson`/`ThumbUrl`/`SplitLines`/`ParseYoutubeUrl`/`QueryParam`; поля `nativeTimeTick`/`lastSentTime`/`lastSentLength` убраны, подписки EndReached/TimeChanged — тоже; `OnNativeError` остался (общий: поток умер — страница гасит воспроизведение).
+- **YtDlp.cs удалён**, блок `Content Include="yt-dlp.exe"` — из csproj (из установщика yt-dlp больше не попадает; локальный файл на диске не тронут). Переводы: удалены 16 ключей ×3 языка (YouTube-раздел и подписи ⏮/⏭/±10 с), строка-разделитель в styles.css, стили `.seek-*` целиком.
+- **station-cleanup.js**: `'yt-'` убран из `USER_ID_PREFIXES` (комментарий — почему), `'Добавить в плейлист'`/`'Уже в плейлисте'` остались: это отметки онлайн-поиска, к YouTube отношения не имеют.
+
+### Вёрстка: влезать в окно 688×688
+
+- **Кнопки**: `.btn` padding 7/14 → 6/12; `.form-buttons .btn` и `.import-export-buttons .btn` — `flex: 1 1 auto` + `white-space: normal` + `text-align: center` (раньше `flex:1` + `min-width:0` + `white-space:nowrap` обрезал длинные подписи посреди слова); `.settings-nav-btn` padding 8/14 → 8/10; строка «TuneIn/RadioPotok» получила `flex-wrap: wrap`.
+- **Эквалайзер покороче** (это и был ответ на «плеер длиннее или EQ короче» — саму панель «Сейчас играет» тянуть нельзя, она flex-shrink:0 и забирает высоту у вкладки): inline `height: 200px` у слайдера удалён из cssText в renderer (теперь рулит CSS), `.eq-slider` 200 → 150, `.equalizer-bands` без `min-height: 300px` (и padding 16 → 14/16), контейнер 16 → 10/12, `.equalizer-header` 24 → 12, h3 16 → 8, `.equalizer-info` 16/12 → 10/8-12, отступы строк чекбоксов/усиления в index.html 12 → 8. Суммарно вкладка ≈576 → ≈445 px при доступных ≈486 px.
+- **Потолок размера окна**: `SetWindowSize`/`SetWindowMinimumSize` теперь упираются в `Screen.WorkingArea` — раньше `measureRequiredWindowWidth` монотонно разгонял MinimumSize за пределы экрана (окно нельзя ни уместить, ни сдвинуть), а переполнение по X в панелях обрезалось `overflow-x: hidden` молча.
+
+### Тесты
+
+- Удалены `youtube-queue`, `youtube-seek`, `youtube-off`; в `stations-persistence` yt- больше не «пользовательский префикс» — вместо этого проверка вычистки легаси-данных и полного отсутствия YouTube-кода в четырёх файлах; в `playback-guard` отвязаны комментарии и снята проверка лога YouTube-трека; в `gain-slider` добавлена проверка дебаунса громкости (была в youtube-seek) и снят ключ «YouTube временно отключён»; в `settings-ui` поправлен текст ошибки. Итог: 9/9 (`node tests\*.test.js`), `dotnet build -c Debug` — 0 ошибок/0 предупреждений. Версия пока 3.5.7 — релиз не выпускался.

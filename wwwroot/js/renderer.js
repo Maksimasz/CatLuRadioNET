@@ -7,17 +7,10 @@ let state = {
   favorites: [],
   history: [], // История прослушанных станций (последние 50)
   currentStation: null,
-  ytQueue: null, // Очередь YouTube-плейлиста: { stationId, tracks, index, misses }
   audio: null,
   isPlaying: false,
   volume: 0.5, // Громкость по умолчанию 50%
   nativeAudio: false,
-  // Перемотка YouTube: позиция и длительность текущего трека в миллисекундах
-  // (событие nativeTime хоста). length <= 0 — живой поток, полоса скрыта.
-  nativeTime: 0,
-  nativeLength: 0,
-  // Пользователь тянет полосу: события позиции не должны заслонять превью.
-  seekDragging: false,
   isClosing: false,
   isStopping: false, // Флаг для отслеживания программной остановки
   isSwitching: false, // Флаг для предотвращения множественных переключений
@@ -64,16 +57,6 @@ state.stationHealth = {};
 state.isRecoveringStream = false;
 // Потоки, которые не играют с Web Audio (сервер без CORS) — играют без обработки
 state.streamsWithoutWebAudio = new Set();
-
-// YouTube временно отключён в этом релизе: репозиторий открытый, а там yt-dlp
-// не работает (WinError 448). Код YouTube-очереди полностью сохранён — когда
-// разберёмся с причиной, достаточно выставить флаг true: секция в настройках,
-// группа в списке, добавление плейлистов и запуск вернутся без новых правок.
-const YOUTUBE_ENABLED = false;
-
-// Станция-плейлист YouTube: свой путь запуска (очередь) и свои метки в списках.
-const isYoutubeStation = station =>
-  station?.type === 'youtube-playlist' || (typeof station?.id === 'string' && station.id.startsWith('yt-'));
 
 function rememberLastStation(station) {
   if (!station || station.preview) return;
@@ -249,6 +232,23 @@ async function loadData() {
     state.stations = await window.AppAPI.getStations();
     state.favorites = await window.AppAPI.getFavorites();
     state.history = await window.AppAPI.getHistory() || [];
+
+    // YouTube из приложения убран окончательно (раньше стоял флаг-гейт):
+    // сохранённые плейлисты больше нечем проигрывать, поэтому вычищаем их
+    // из станций, избранного и истории одним заходом — мёртвые записи не
+    // должны всплывать в списках и в автозапуске.
+    const isLegacyYt = (item) => !!item && (item.type === 'youtube-playlist' ||
+      (typeof item.id === 'string' && item.id.startsWith('yt-')));
+    const legacyYtIds = new Set(state.stations.filter(isLegacyYt).map(s => s.id));
+    if (legacyYtIds.size) {
+      state.stations = state.stations.filter(s => !legacyYtIds.has(s.id));
+      state.favorites = (Array.isArray(state.favorites) ? state.favorites : []).filter(id => !legacyYtIds.has(id));
+      state.history = state.history.filter(h => !isLegacyYt(h));
+      await window.AppAPI.saveStations(state.stations);
+      await window.AppAPI.saveFavorites(state.favorites);
+      await window.AppAPI.saveHistory(state.history);
+      console.log('Удалено YouTube-плейлистов:', legacyYtIds.size);
+    }
     const savedSettings = await window.AppAPI.getSettings();
     if (savedSettings) {
       // Объединить настройки, сохраняя структуру вложенных объектов
@@ -360,7 +360,7 @@ async function loadData() {
     // Если версия изменилась или не установлена - ПРИНУДИТЕЛЬНО заменить все предустановленные
     else if (!savedVersion || savedVersion !== currentVersion) {
       // Сохранить ВСЕ пользовательские: добавленные вручную и из онлайн-поиска (user-),
-      // импортированные (imported_), YouTube-плейлисты (yt-) и избранные —
+      // импортированные (imported_) и избранные —
       // единый критерий для всех веток чистки, см. StationCleanup.isUserAdded
       const userStations = state.stations.filter(s =>
         s.id && StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
@@ -393,7 +393,7 @@ async function loadData() {
       }
       
       // Проверить, есть ли старые предустановленные станции, которых нет в новом списке
-      // Пользовательские (user-/imported_/yt-) и избранные не трогаем — StationCleanup
+      // Пользовательские (user-/imported_) и избранные не трогаем — StationCleanup
       const oldDefaultStations = state.stations.filter(s =>
         s.id && !StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
       );
@@ -404,7 +404,7 @@ async function loadData() {
       
       if (oldDefaultStations.length > 0 || missingDefaults.length > 0) {
         // Оставить только проверенные предустановленные и пользовательские
-        // (в том числе YouTube-плейлисты yt-) — критерий см. StationCleanup
+        // — критерий см. StationCleanup
         const userStations = state.stations.filter(s =>
           s.id && StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
         );
@@ -500,8 +500,8 @@ function flushVolumeSave() {
   }
   saveVolumeSettings();
   // Один лог на жест (change, не input): в app.log видно, с каким значением
-  // ползунок реально ушёл в хост — «значение или механизм» при жалобе на тихий
-  // YouTube после движения ползунка.
+  // ползунок реально ушёл в хост — «значение или механизм» при жалобе на тихое
+  // радио после движения ползунка.
   window.AppAPI.log?.(`громкость: ${state.volume}`);
 }
 
@@ -537,12 +537,6 @@ async function autoPlayLastStation() {
 
     if (lastStationId) {
       const lastStation = state.stations.find(s => s.id === lastStationId);
-      // YouTube отключён: последняя станция-плейлист не запускается молча —
-      // тост о старте был бы непонятен, пользователь просто запустит радио сам.
-      if (lastStation && !YOUTUBE_ENABLED && isYoutubeStation(lastStation)) {
-        console.log('Автозапуск пропущен: YouTube временно отключён');
-        return;
-      }
       if (lastStation) {
         console.log('Автозапуск:', lastStation.name);
         setTimeout(() => {
@@ -612,18 +606,7 @@ function renderHistory() {
   
   if (emptyMsg) emptyMsg.style.display = 'none';
   
-  // YouTube отключён: yt-плейлисты в истории не показываем (данные не трогаем,
-  // клик по ним всё равно блокировался бы guard'ом в playStation).
-  const historyItems = YOUTUBE_ENABLED
-    ? state.history
-    : state.history.filter(item => !isYoutubeStation(state.stations.find(s => s.id === item.id) || item));
-  if (historyItems.length === 0) {
-    container.innerHTML = '';
-    if (emptyMsg) emptyMsg.style.display = 'block';
-    return;
-  }
-  
-  container.innerHTML = historyItems.map((item, index) => {
+  container.innerHTML = state.history.map((item, index) => {
     const station = state.stations.find(s => s.id === item.id) || item;
     const playedDate = new Date(item.playedAt);
     const timeStr = playedDate.toLocaleString('ru-RU', {
@@ -679,12 +662,6 @@ function renderHistory() {
 
 // Инициализация UI
 function initUI() {
-  // YouTube отключён в этом релизе (YOUTUBE_ENABLED): секция добавления
-  // плейлиста скрывается — разметка остаётся, чтобы включить обратно одной
-  // строкой флага без правок вёрстки.
-  const ytSection = document.getElementById('ytPlaylistSection');
-  if (ytSection) ytSection.style.display = YOUTUBE_ENABLED ? '' : 'none';
-
   // Установить начальный объем
   const volumeSlider = document.getElementById('volumeSlider');
   const volumeValue = document.getElementById('volumeValue');
@@ -756,7 +733,7 @@ function loadStations() {
   // TranslationManager зовёт refreshLanguageUI() на DOMContentLoaded,
   // а старт приложения (startApp → init) отложен на 200 мс. Хранилище
   // затиралось предустановленными при каждом запуске, и всё добавленное
-  // после поставки (станции онлайн-поиска, YouTube-плейлисты) пропадало,
+  // после поставки (станции онлайн-поиска, импорт) пропадало,
   // а избранное и история, лежащие в других ключах, оставались на месте.
   if (!state.stations || state.stations.length === 0) {
     logError('ВНИМАНИЕ: Нет станций для отображения! Количество станций: ' + (state.stations ? state.stations.length : 'undefined'));
@@ -844,21 +821,9 @@ function renderStations(stations) {
       </div>
     </div>
   `).join('');
-  // YouTube-плейлисты и одиночные видео живут в своём разделе «YouTube»,
-  // а не вперемешку с «Другая»: им нечего искать по странам, важен сам
-  // плейлист. Раздел — первым в списке, остальные группы как раньше.
-  // При отключённом YOUTUBE_ENABLED yt-станции выпадают из списка целиком
-  // (данные в сторе не трогаем — вернутся вместе с флагом).
-  const visible = YOUTUBE_ENABLED ? filtered : filtered.filter(s => !isYoutubeStation(s));
-  if (visible.length === 0) {
-    container.innerHTML = `<p class="empty-message">${t('Станции не найдены')}</p>`;
-    return;
-  }
-  const ytStations = visible.filter(isYoutubeStation);
   const countries = new Map();
-  visible.filter(s => !isYoutubeStation(s)).forEach(station => countries.set(station.country, [...(countries.get(station.country) || []), station]));
+  filtered.forEach(station => countries.set(station.country, [...(countries.get(station.country) || []), station]));
   const groups = [];
-  if (ytStations.length) groups.push(['YouTube', ytStations]);
   [...countries]
     .sort(([a], [b]) => getCountryName(a).localeCompare(getCountryName(b), 'ru'))
     .forEach(([country, group]) => groups.push([getCountryName(country), group]));
@@ -932,18 +897,12 @@ function renderFavorites() {
     .map(id => state.stations.find(s => s.id === id))
     .filter(s => s);
   
-  // YouTube отключён: yt-плейлисты в избранном не показываем (сами записи
-  // в сторе остаются — вернутся вместе с флагом YOUTUBE_ENABLED).
-  if (!YOUTUBE_ENABLED) {
-    favoriteStations = favoriteStations.filter(s => !isYoutubeStation(s));
-  }
-  
   // Применить сортировку к избранному
   const sortType = state.settings.sortType || 'name';
   favoriteStations = sortStations(favoriteStations, sortType);
   
-  // После фильтрации YouTube избранное может оказаться пустым — вернуть
-  // сообщение «Добавьте станции в избранное» вместо голого списка.
+  // Ни одной избранной станции не осталось (например, все были удалены) —
+  // вернуть сообщение «Добавьте станции в избранное» вместо голого списка.
   if (favoriteStations.length === 0) {
     container.innerHTML = '';
     emptyMsg.style.display = 'block';
@@ -1095,30 +1054,11 @@ async function playStation(station) {
     return;
   }
 
-  // YouTube-плейлист — очередь треков, у неё свой путь запуска. Опция
-  // временно выключена (YOUTUBE_ENABLED): код сохранён, запуск блокируется
-  // с пояснением — станции из истории/избранного не должны падать молча.
-  if (station.type === 'youtube-playlist') {
-    if (!YOUTUBE_ENABLED) {
-      showToast(t('YouTube временно отключён'), 'info');
-      return;
-    }
-    return playYoutubeStation(station);
-  }
-  
   // Установить флаг переключения
   state.isSwitching = true;
 
   await window.AppAPI.stopNative();
   state.nativeAudio = false;
-
-  // Переключение с YouTube на обычную станцию: радио играет тем же LibVLC,
-  // но очередь YouTube и последняя длительность иначе переживают смену
-  // станции — гейт `ytQueue && nativeLength > 0` проходил на устаревших
-  // значениях и панель перемотки оставалась видна поверх радио
-  // (жалоба 2026-10-08: «при проигрывании станции меню ютуба не исчезает»).
-  state.ytQueue = null;
-  resetSeekState();
 
   const crossfadeEnabled = state.settings.crossfade && state.settings.crossfade.enabled;
   const crossfadeDuration = state.settings.crossfade ? state.settings.crossfade.duration : 2000;
@@ -1242,300 +1182,17 @@ async function playStation(station) {
 }
 
 
-/**
- * YouTube-плейлист: очередь треков поверх LibVLC.
- *
- * Ссылки на аудио YouTube (googlevideo) живут несколько часов и привязаны к IP,
- * поэтому каждый трек резолвится непосредственно перед запуском
- * (AppAPI.resolveYoutubeTrack), а по естественному концу трека хост шлёт
- * событие nativeEnded — на нём очередь сама переходит к следующему.
- * Кроссфейд не применяется: треки разной длительности, и между ними LibVLC
- * сам ставит границу файла.
- */
-async function playYoutubeStation(station) {
-  if (state.isSwitching) return;
-
-  // Общая остановка: гасит LibVLC, <audio>, HLS и сбрасывает прошлую очередь
-  stopPlay();
-
-  const tracks = Array.isArray(station.ytTracks) ? station.ytTracks : [];
-  if (!tracks.length) {
-    showToast(t('Плейлист пуст'), 'error');
-    return;
-  }
-
-  state.isSwitching = true;
-  state.currentStation = station;
-  state.ytQueue = { stationId: station.id, tracks, index: 0, misses: 0 };
-  await playYoutubeTrack(0);
-}
-
-/**
- * Запуск одного трека очереди: сначала резолв аудио-потока, потом playNative.
- * requestedIndex берётся по модулю длины — очередь зациклена как радио.
- */
-async function playYoutubeTrack(requestedIndex) {
-  const queue = state.ytQueue;
-  if (!queue || !queue.tracks.length) {
-    state.isSwitching = false;
-    return;
-  }
-
-  const count = queue.tracks.length;
-  queue.index = ((requestedIndex % count) + count) % count;
-  const track = queue.tracks[queue.index];
-  let started = false;
-  // Новый трек: полоса гаснет до первого nativeTime от хоста — старая
-  // позиция не должна пережить переключение.
-  resetSeekState();
-
-  try {
-    const resolveStartedAt = performance.now();
-    const resolved = await window.AppAPI.resolveYoutubeTrack(track.id);
-    const resolveMs = Math.round(performance.now() - resolveStartedAt);
-    if (!resolved?.success || !resolved.url) {
-      window.AppAPI.log?.(`youtube: резолв ${resolveMs} мс, ошибка: ${resolved?.error || 'нет url'}`);
-      await skipYoutubeTrack(track, resolved?.error);
-      return;
-    }
-
-    const nativeStartedAt = performance.now();
-    const nativeResult = await window.AppAPI.playNative(resolved.url, state.volume);
-    // Тайминг в app.log: показывает, где именно теряются секунды между
-    // кликом по YouTube-станции и началом звука.
-    window.AppAPI.log?.(`youtube трек ${track.id}: резолв ${resolveMs} мс, старт VLC ${Math.round(performance.now() - nativeStartedAt)} мс, громкость ${state.volume}${nativeResult?.success ? '' : ' — неудача'}`);
-    if (nativeResult?.success) {
-      started = true;
-      state.nativeAudio = true;
-      // YouTube — всегда без эквалайзера (просьба 2026-10-09 «отключи
-      // эквалайзер от ютуба»): null снимает фильтр с LibVLC целиком, включая
-      // унаследованный от радиового запуска — нативный плеер один на все
-      // источники. Сбой моста не должен ронять очередь: TypeError здесь
-      // раньше останавливал функцию до сброса isSwitching — очередь умирала
-      // после первого трека, а повторный запуск молча не работал.
-      try {
-        await window.AppAPI.setNativeEqualizer(null);
-      } catch (e) { console.warn('Эквалайзер LibVLC не применился:', e); }
-      state.isPlaying = true;
-      queue.misses = 0;
-      rememberLastStation(state.currentStation);
-      state.isSwitching = false;
-      updatePlayButton();
-      const label = track.author ? `${track.title} — ${track.author}` : track.title;
-      updateNowPlaying(label, track.title);
-      renderStations(state.stations);
-      renderFavorites();
-      return;
-    }
-    await skipYoutubeTrack(track, t('LibVLC не начал воспроизведение'));
-  } catch (error) {
-    // Любая неожиданная ошибка не должна навечно заблокировать isSwitching:
-    // трек уже играет — просто разблокируем управление, трек не запустился —
-    // пропускаем его по общим правилам (три пропуска подряд и очередь встаёт).
-    console.error('YouTube: сбой запуска трека:', error);
-    if (started) {
-      state.isSwitching = false;
-      state.isPlaying = true;
-      updatePlayButton();
-    } else {
-      await skipYoutubeTrack(track, error?.message || String(error));
-    }
-  }
-}
-
-/**
- * Трек недоступен (возрастной, региональный, истёкший манифест) — пропускаем.
- * После трёх неудач подряд останавливаемся: так полностью нерабочий плейлист
- * не крутится в вечном цикле.
- */
-async function skipYoutubeTrack(track, error) {
-  const queue = state.ytQueue;
-  if (!queue) {
-    state.isSwitching = false;
-    return;
-  }
-
-  queue.misses = (queue.misses || 0) + 1;
-  console.warn(`YouTube: трек «${track.title}» не играет (${error || 'нет аудио'}), пропускаем`);
-
-  if (queue.misses >= Math.min(queue.tracks.length, 3)) {
-    stopYoutubeQueue();
-    showToast(t('Не удалось воспроизвести плейлист: {name}', { name: state.currentStation?.name || '' }), 'error');
-    return;
-  }
-
-  // Пауза перед следующим: LibVLC только что отказал и должен отпустить поток
-  await new Promise(resolve => setTimeout(resolve, 400));
-  await playYoutubeTrack(queue.index + 1);
-}
-
-function stopYoutubeQueue() {
-  state.ytQueue = null;
-  state.isSwitching = false;
-  state.isPlaying = false;
-  window.AppAPI.stopNative();
-  state.nativeAudio = false;
-  updatePlayButton();
-  updateNowPlaying('—');
-}
-
-// Событие nativeEnded: трек доиграл естественно — двигаем очередь дальше.
-function handleNativeEnded() {
-  const queue = state.ytQueue;
-  if (!queue || state.isSwitching || !state.isPlaying) return;
-  state.isSwitching = true;
-  playYoutubeTrack(queue.index + 1).catch((error) => {
-    console.error('Ошибка перехода к следующему треку YouTube:', error);
-    state.isSwitching = false;
-  });
-}
-
-// Событие nativeError: LibVLC умер посреди игры (обрыв сети, 403 от
-// googlevideo). Без него страница не узнаёт о смерти плеера: очередь молчит,
-// а кнопка Play вызывает resumeNative на мёртвом медиа и ничего не делает.
+// Событие nativeError: LibVLC умер посреди игры (обрыв сети). Без него
+// страница не узнаёт о смерти плеера: кнопка Play вызывает resumeNative
+// на мёртвом медиа и ничего не делает.
 function handleNativeError() {
-  const queue = state.ytQueue;
-  if (queue && !state.isSwitching && state.isPlaying) {
-    // Трактуем как неудачный трек: пропуск по общим правилам с лимитом в три.
-    skipYoutubeTrack(queue.tracks[queue.index], 'LibVLC: ошибка потока').catch((error) => {
-      console.error('Ошибка после обрыва потока LibVLC:', error);
-      state.isSwitching = false;
-    });
-    return;
-  }
   if (!state.nativeAudio || !state.isPlaying) return;
   console.warn('LibVLC: поток прервался, останавливаем воспроизведение');
   state.isPlaying = false;
   state.nativeAudio = false;
-  resetSeekState();
   updatePlayButton();
   updateNowPlaying('—');
   showToast(t('Воспроизведение прервано: поток недоступен'), 'error');
-}
-
-// ——— Перемотка YouTube ———
-// Полоса под названием трека в «Сейчас играет»: рисуется только пока играет
-// очередь YouTube и хост сообщает длительность (Length > 0 у живого радио нет).
-
-function resetSeekState() {
-  state.nativeTime = 0;
-  state.nativeLength = 0;
-  state.seekDragging = false;
-  updateSeekUI();
-}
-
-function formatSeekTime(ms) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = String(total % 60).padStart(2, '0');
-  return `${minutes}:${seconds}`;
-}
-
-// Событие nativeTime: позиция/длительность от хоста (раз в 250 мс).
-function handleNativeTime(event) {
-  const detail = (event && event.detail) || {};
-  const time = Number(detail.time);
-  const length = Number(detail.length);
-  state.nativeTime = Number.isFinite(time) ? Math.max(0, time) : 0;
-  state.nativeLength = Number.isFinite(length) ? Math.max(0, length) : 0;
-  updateSeekUI();
-}
-
-function updateSeekUI() {
-  const controls = document.getElementById('seekControls');
-  if (!controls) return;
-  // Гейт двойной: без очереди YouTube полоса не нужна, без длительности
-  // (живой поток, медиа снято) перемотывать нечего.
-  const visible = Boolean(state.ytQueue) && state.nativeLength > 0;
-  controls.style.display = visible ? '' : 'none';
-  if (!visible) return;
-
-  const totalEl = document.getElementById('seekTimeTotal');
-  const currentEl = document.getElementById('seekTimeCurrent');
-  const fill = document.getElementById('seekFill');
-  if (totalEl) totalEl.textContent = formatSeekTime(state.nativeLength);
-  // Пока ползунок в руках — превью позиции держит pointermove, не события.
-  if (state.seekDragging) return;
-  const pos = Math.min(state.nativeTime, state.nativeLength);
-  if (fill) fill.style.width = (pos / state.nativeLength * 100) + '%';
-  if (currentEl) currentEl.textContent = formatSeekTime(pos);
-}
-
-// Кнопки ±10 секунд и клик/перетаскивание по полосе.
-function setupSeekControls() {
-  const track = document.getElementById('seekTrack');
-  const backBtn = document.getElementById('seekBackBtn');
-  const fwdBtn = document.getElementById('seekFwdBtn');
-  if (!track) return;
-
-  const fractionFrom = (e) => {
-    const rect = track.getBoundingClientRect();
-    if (rect.width <= 0) return 0;
-    return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-  };
-
-  const preview = (e) => {
-    if (!(state.nativeLength > 0)) return undefined;
-    const pos = fractionFrom(e) * state.nativeLength;
-    const fill = document.getElementById('seekFill');
-    const currentEl = document.getElementById('seekTimeCurrent');
-    if (fill) fill.style.width = (pos / state.nativeLength * 100) + '%';
-    if (currentEl) currentEl.textContent = formatSeekTime(pos);
-    return pos;
-  };
-
-  track.addEventListener('pointerdown', (e) => {
-    if (!state.ytQueue || !(state.nativeLength > 0)) return;
-    state.seekDragging = true;
-    try { track.setPointerCapture(e.pointerId); } catch (_) { /* capture — по желанию */ }
-    preview(e);
-    e.preventDefault();
-  });
-  track.addEventListener('pointermove', (e) => {
-    if (state.seekDragging) preview(e);
-  });
-  const commit = (e) => {
-    if (!state.seekDragging) return;
-    const pos = preview(e);
-    state.seekDragging = false;
-    if (pos !== undefined) {
-      state.nativeTime = pos;
-      window.AppAPI.seekNative(Math.round(pos));
-    }
-    updateSeekUI();
-  };
-  track.addEventListener('pointerup', commit);
-  track.addEventListener('pointercancel', () => {
-    state.seekDragging = false;
-    updateSeekUI();
-  });
-
-  const nudge = (deltaSec) => {
-    if (!state.ytQueue || !(state.nativeLength > 0)) return;
-    const target = Math.min(Math.max(state.nativeTime + deltaSec * 1000, 0), state.nativeLength);
-    state.nativeTime = target;
-    window.AppAPI.seekNative(Math.round(target));
-    updateSeekUI();
-  };
-  if (backBtn) backBtn.addEventListener('click', () => nudge(-10));
-  if (fwdBtn) fwdBtn.addEventListener('click', () => nudge(10));
-
-  // ⏮/⏭ — переключение треков очереди. Тот же заход, что у nativeEnded:
-  // guard isSwitching от двойного клика, зацикленный переход через
-  // playYoutubeTrack (счётчик по модулю длины — с последнего на первый).
-  const switchTrack = (delta) => {
-    const queue = state.ytQueue;
-    if (!queue || state.isSwitching) return;
-    state.isSwitching = true;
-    playYoutubeTrack(queue.index + delta).catch((error) => {
-      console.error('Ошибка переключения трека YouTube:', error);
-      state.isSwitching = false;
-    });
-  };
-  const prevBtn = document.getElementById('seekPrevTrackBtn');
-  const nextBtn = document.getElementById('seekNextTrackBtn');
-  if (prevBtn) prevBtn.addEventListener('click', () => switchTrack(-1));
-  if (nextBtn) nextBtn.addEventListener('click', () => switchTrack(1));
 }
 
 
@@ -2225,9 +1882,6 @@ function stopPlay() {
   
   // Сбросить флаг переключения при остановке
   state.isSwitching = false;
-  // Очередь YouTube живёт ровно до остановки: nativeEnded её больше не тронет
-  state.ytQueue = null;
-  resetSeekState();
 
   window.AppAPI.stopNative();
   state.nativeAudio = false;
@@ -2489,9 +2143,9 @@ function isFavorite(stationId) {
 function isUserStation(stationId) {
   // Показывать кнопки редактирования/удаления только если включен режим редактирования
   // Пользовательские: добавленные вручную и из онлайн-поиска (user-),
-  // импортированные (imported_) и YouTube-плейлисты (yt-)
+  // импортированные (imported_)
   if (!state.settings.editMode) return false;
-  return stationId && (stationId.startsWith('user-') || stationId.startsWith('imported_') || stationId.startsWith('yt-'));
+  return stationId && (stationId.startsWith('user-') || stationId.startsWith('imported_'));
 }
 
 // Используем модуль названий стран
@@ -2518,10 +2172,7 @@ async function checkAllStations() {
   button.setAttribute('aria-disabled', 'true');
   status.textContent = t('Проверка…');
   let working = 0;
-  // YouTube отключён: yt-плейлист не поток — проверка только дольше ждала
-  // таймаут на каждый запуск и врала в счётчике «Работают X из Y».
-  const toCheck = YOUTUBE_ENABLED ? state.stations : state.stations.filter(s => !isYoutubeStation(s));
-  await Promise.all(toCheck.map(async station => {
+  await Promise.all(state.stations.map(async station => {
     const result = await window.AppAPI.checkStream(station.url);
     if (result?.success === true) {
       state.stationHealth[station.id] = true;
@@ -2533,7 +2184,7 @@ async function checkAllStations() {
   }));
   await window.AppAPI.saveStations(state.stations);
   renderStations(state.stations);
-  status.textContent = t('Работают {working} из {total}', { working: working, total: toCheck.length });
+  status.textContent = t('Работают {working} из {total}', { working: working, total: state.stations.length });
   button.dataset.busy = 'false';
   button.removeAttribute('aria-disabled');
 }
@@ -2837,9 +2488,6 @@ function setupEventListeners() {
   // Отпустили ползунок — сохранить сразу, не дожидаясь дебаунса.
   volumeSlider.addEventListener('change', flushVolumeSave);
 
-  // Перемотка YouTube: полоса и кнопки под названием трека в «Сейчас играет».
-  setupSeekControls();
-  
   // Мини-плеер: кнопки управления
   const miniPlayPauseBtn = document.getElementById('miniPlayPauseBtn');
   const miniStopBtn = document.getElementById('miniStopBtn');
@@ -2903,11 +2551,7 @@ function setupEventListeners() {
     await addStation();
   });
 
-  // Добавление YouTube-плейлиста по ссылке
-  document.getElementById('addYtPlaylistBtn').addEventListener('click', addYoutubePlaylist);
-  document.getElementById('ytPlaylistUrl').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addYoutubePlaylist();
-  });
+  // Добавление станции по ссылке (кнопка «Добавить станцию»)
   
   // Обновление станции (кнопка "Сохранить изменения")
   document.getElementById('updateStationBtn').addEventListener('click', async () => {
@@ -3214,7 +2858,7 @@ function initEqualizer() {
     slider.step = '0.5';
     slider.setAttribute('data-band', index);
     slider.setAttribute('orient', 'vertical'); // Для Firefox
-    slider.style.cssText = 'width: 100%; min-width: 30px; height: 200px; writing-mode: vertical-lr; direction: rtl; cursor: pointer; accent-color: var(--md-primary); display: block; visibility: visible; opacity: 1;';
+    slider.style.cssText = 'width: 100%; min-width: 30px; writing-mode: vertical-lr; direction: rtl; cursor: pointer; accent-color: var(--md-primary); display: block; visibility: visible; opacity: 1;';
     
     const valueDisplay = document.createElement('span');
     valueDisplay.className = 'eq-value';
@@ -3413,15 +3057,15 @@ function initEqualizer() {
 }
 
 // Значения для нативного эквалайзера LibVLC: null — снять фильтр совсем
-// (чистый проход). Фильтр навешиваем только когда он включён чекбоксом,
-// очередь не YouTube и полосы не плоские. Раньше полосы применялись ВСЕГДА,
+// (чистый проход). Фильтр навешиваем только когда он включён чекбоксом
+// и полосы не плоские. Раньше полосы применялись ВСЕГДА,
 // минуя чекбокс («выключил эквалайзер, а он работает»), а Preamp +6 дБ шёл
 // поверх «горячих» потоков — перегрузка, «звук как из бочки» (жалоба
 // 2026-10-09). Громкостью этот фильтр больше не занимается: даёт только
 // nativePlayer.Volume.
 function nativeEqualizerValues() {
   const eq = state.settings.equalizer;
-  if (state.ytQueue || !eq?.enabled || !Array.isArray(eq.values) || !eq.values.some(v => v)) return null;
+  if (!eq?.enabled || !Array.isArray(eq.values) || !eq.values.some(v => v)) return null;
   return eq.values;
 }
 
@@ -3457,8 +3101,7 @@ function applyAudioProcessingChange() {
 
   // Нативный плеер (LibVLC): чекбокс обязан действовать сразу. Раньше ниже
   // обрабатывался только state.audio (браузер), и выключенный эквалайзер
-  // продолжал звучать до следующего переключения станции. YouTube всегда
-  // без фильтра — nativeEqualizerValues() вернёт null.
+  // продолжал звучать до следующего переключения станции.
   if (state.nativeAudio) {
     window.AppAPI.setNativeEqualizer(nativeEqualizerValues());
     return;
@@ -3705,88 +3348,6 @@ function editStation(stationId) {
 }
 
 // Обновление станции
-/**
- * Импорт YouTube-плейлиста по ссылке в станции.
- * Хост один раз разбирает ссылку (список треков + обложка), треки кладутся
- * в станцию целиком — сами аудио-потоки резолвятся только перед запуском.
- */
-async function addYoutubePlaylist() {
-  const input = document.getElementById('ytPlaylistUrl');
-  const button = document.getElementById('addYtPlaylistBtn');
-  const messageEl = document.getElementById('ytPlaylistMessage');
-  const url = (input?.value || '').trim();
-
-  // Опция выключена: секция скрыта, но на всякий случай блокируем и вызов —
-  // резолв через yt-dlp сейчас всё равно падает с WinError 448.
-  if (!YOUTUBE_ENABLED) {
-    if (messageEl) {
-      messageEl.textContent = t('YouTube временно отключён');
-      messageEl.className = 'message error';
-    }
-    return;
-  }
-
-  if (!url) {
-    if (messageEl) {
-      messageEl.textContent = t('Вставьте ссылку на плейлист YouTube');
-      messageEl.className = 'message error';
-    }
-    return;
-  }
-
-  if (button) button.disabled = true;
-  if (messageEl) {
-    messageEl.textContent = t('Загружаем плейлист…');
-    messageEl.className = 'message';
-  }
-
-  try {
-    const result = await window.AppAPI.resolveYoutubePlaylist(url);
-    const tracks = Array.isArray(result?.tracks) ? result.tracks : [];
-
-    if (!result?.success || !tracks.length) {
-      if (messageEl) {
-        messageEl.textContent = result?.success
-          ? t('Плейлист пуст')
-          : t('Не удалось загрузить плейлист: {error}', { error: result?.error || t('Неизвестная ошибка') });
-        messageEl.className = 'message error';
-      }
-      return;
-    }
-
-    const station = {
-      id: 'yt-' + Date.now(),
-      name: result.title || t('YouTube-плейлист'),
-      url,
-      country: 'OTHER',
-      genre: 'YouTube',
-      source: 'YouTube',
-      type: 'youtube-playlist',
-      image: result.thumbnail || '',
-      ytTracks: tracks
-    };
-
-    state.stations.push(station);
-    await window.AppAPI.saveStations(state.stations);
-    renderStations(state.stations);
-    renderFavorites();
-
-    const success = t('Плейлист добавлен: {n} треков', { n: tracks.length });
-    if (input) input.value = '';
-    if (messageEl) {
-      messageEl.textContent = success;
-      messageEl.className = 'message success';
-    }
-    showToast(success, 'success');
-  } catch (error) {
-    if (messageEl) {
-      messageEl.textContent = t('Не удалось загрузить плейлист: {error}', { error: error.message });
-      messageEl.className = 'message error';
-    }
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
 
 async function updateStation(stationId) {
   const name = document.getElementById('stationName').value.trim();
@@ -4027,20 +3588,16 @@ function setupIPCListeners() {
     stopPlay();
   });
 
-  // YouTube-очередь: хост сообщает событием nativeEnded, что трек доиграл
-  // до конца, — двигаем очередь к следующему. nativeError — поток умер
-  // посреди игры, очередь пропускает трек по общим правилам.
-  register('onNativeEnded', handleNativeEnded);
+  // nativeError — поток умер посреди игры: страница гасит воспроизведение
+  // и сообщает пользователю, иначе кнопка Play бездействует на мёртвом медиа.
   register('onNativeError', handleNativeError);
-  // Перемотка YouTube: позиция и длительность трека для полосы прогресса.
-  register('onNativeTime', handleNativeTime);
   
   register('onStopAllAudio', () => {
     stopAllAudio();
   });
   
   register('onShowAbout', () => {
-    showToast(t('CatLu Radio NET v3.5.7\n\nПриложение для прослушивания интернет-радио.'), 'info');
+    showToast(t('CatLu Radio NET v3.5.8\n\nПриложение для прослушивания интернет-радио.'), 'info');
   });
   
   // При выгрузке страницы помечаем закрытие: stopPlay() в этом случае не

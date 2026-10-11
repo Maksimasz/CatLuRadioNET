@@ -10,7 +10,7 @@
     console.log('Время:', new Date().toLocaleTimeString());
   </script>
   <!-- WebView2 API -->
-  <script src="js/api-adapter.js?v=3.5.7"></script>
+  <script src="js/api-adapter.js?v=3.5.8"></script>
   <!-- HLS.js для поддержки HLS потоков (m3u8) -->
   <script src="js/hls.min.js"></script>
 </head>
@@ -168,7 +168,7 @@
             <button id="eqResetBtn" class="btn btn-secondary">Сброс</button>
           </div>
         </div>
-        <div class="form-group" style="display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin-bottom: 12px;">
+        <div class="form-group" style="display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin-bottom: 8px;">
           <label>
             <input type="checkbox" id="eqEnableChk">
             Эквалайзер
@@ -178,7 +178,7 @@
             Выравнивание громкости
           </label>
         </div>
-        <div class="form-group" style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 12px;">
+        <div class="form-group" style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px;">
           <label for="gainSlider" style="margin-bottom: 0; white-space: nowrap;">Усиление, дБ</label>
           <input type="range" id="gainSlider" class="gain-slider" min="0" max="12" step="1" value="6" style="flex: 1; min-width: 140px;">
           <span id="gainValue" class="gain-value">+6</span>
@@ -264,7 +264,7 @@
             </div>
             <div class="form-group">
               <label for="stationUrl">URL потока:</label>
-              <div style="display: flex; gap: 8px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                 <input type="text" id="stationUrl" placeholder="https://example.com/stream.mp3 или TuneIn URL или RadioPotok скрипт" style="flex: 1;">
                 <button id="extractTuneInBtn" class="btn btn-secondary" title="Извлечь поток из TuneIn">🔗 TuneIn</button>
                 <button id="extractRadioPotokBtn" class="btn btn-secondary" title="Извлечь поток из RadioPotok (введите ссылку на скрипт: https://radiopotok.ru/f/script6.1/4.js)">📻 RadioPotok</button>
@@ -323,18 +323,6 @@
             <div id="addStationMessage" class="message"></div>
           </div>
         </div>
-        
-            <div class="settings-section" id="ytPlaylistSection" style="margin-top: 20px;">
-              <h3>YouTube-плейлист</h3>
-              <p class="settings-description">Добавьте плейлист, видео или YouTube-радио по ссылке — он заиграет очередью в основном плеере, с эквалайзером и историей.</p>
-              <div class="form-group">
-                <div style="display: flex; gap: 8px;">
-                  <input type="text" id="ytPlaylistUrl" placeholder="https://www.youtube.com/playlist?list=..." style="flex: 1;">
-                  <button id="addYtPlaylistBtn" class="btn btn-primary">➕ Добавить плейлист</button>
-                </div>
-              </div>
-              <div id="ytPlaylistMessage" class="message"></div>
-            </div>
         
             <div class="settings-section" style="margin-top: 20px;">
               <h3>Импорт/Экспорт станций</h3>
@@ -465,35 +453,6 @@
         <span class="now-playing-label">Сейчас играет:</span>
         <div class="now-playing-details">
           <span class="now-playing-station" id="nowPlayingStation">—</span>
-          <!-- Перемотка YouTube: появляется только когда играет очередь YouTube
-               и хост сообщает длительность трека (см. updateSeekUI) -->
-          <div class="seek-controls" id="seekControls" style="display: none;">
-            <button class="seek-btn" id="seekPrevTrackBtn" title="Предыдущий трек" aria-label="Предыдущий трек">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 6h2v12H6V6zm3.5 6L18 18V6l-8.5 6z"/>
-              </svg>
-            </button>
-            <button class="seek-btn" id="seekBackBtn" title="Перемотать назад на 10 секунд" aria-label="Перемотать назад на 10 секунд">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11.5 12 18 17.5 18 6.5 11.5 12zM4.5 12 11 17.5 11 6.5 4.5 12z"/>
-              </svg>
-            </button>
-            <span class="seek-time" id="seekTimeCurrent">0:00</span>
-            <div class="seek-track" id="seekTrack" role="slider" aria-label="Позиция трека" aria-valuemin="0" aria-valuenow="0">
-              <div class="seek-fill" id="seekFill"></div>
-            </div>
-            <span class="seek-time" id="seekTimeTotal">0:00</span>
-            <button class="seek-btn" id="seekFwdBtn" title="Перемотать вперёд на 10 секунд" aria-label="Перемотать вперёд на 10 секунд">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.5 12 6 6.5 6 17.5 12.5 12zM13 6.5v11L19.5 12 13 6.5z"/>
-              </svg>
-            </button>
-            <button class="seek-btn" id="seekNextTrackBtn" title="Следующий трек" aria-label="Следующий трек">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z"/>
-              </svg>
-            </button>
-          </div>
         </div>
         <div class="station-health">
           <a href="#" id="checkStationsBtn">Проверить станции</a>
@@ -568,9 +527,9 @@
   <div id="toastRoot" class="toast-root" aria-live="polite"></div>
 
   <!-- Чистка списка станций при старте: отдельный модуль, чтобы тесты могли его проверять -->
-  <script src="js/station-cleanup.js?v=3.5.7"></script>
+  <script src="js/station-cleanup.js?v=3.5.8"></script>
   <!-- Основной скрипт -->
-  <script src="js/renderer.js?v=3.5.7"></script>
+  <script src="js/renderer.js?v=3.5.8"></script>
   <!-- Вкладки внутри настроек: панели вместо аккордеонов -->
   <script>
     // Показать выбранную панель настроек, скрыв остальные

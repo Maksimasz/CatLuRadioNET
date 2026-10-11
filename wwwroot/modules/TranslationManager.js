@@ -42,11 +42,6 @@ const TranslationManager = {
       'Сейчас играет:': 'Now playing:',
       'Сейчас играет': 'Now playing',
       'Проверить станции': 'Check stations',
-      'Перемотать назад на 10 секунд': 'Rewind 10 seconds',
-      'Перемотать вперёд на 10 секунд': 'Forward 10 seconds',
-      'Позиция трека': 'Track position',
-      'Предыдущий трек': 'Previous track',
-      'Следующий трек': 'Next track',
 
       // ——— Поиск станций ———
       'Все порталы': 'All portals',
@@ -99,7 +94,6 @@ const TranslationManager = {
       'Сброс': 'Reset',
       'Выравнивание громкости': 'Loudness leveling',
       'Усиление, дБ': 'Gain, dB',
-      'YouTube временно отключён': 'YouTube is temporarily disabled',
       'Перетащите ползунки для настройки частот. Изменения применяются автоматически.': 'Drag the sliders to adjust frequencies. Changes apply automatically.',
       'Ошибка создания эквалайзера. Слайдеры не были созданы.': 'Failed to create the equalizer. The sliders were not built.',
       'ОШИБКА: Модуль Equalizer не загружен. Проверьте загрузку modules/Equalizer.js': 'ERROR: Equalizer module not loaded. Check that modules/Equalizer.js is loaded',
@@ -131,17 +125,6 @@ const TranslationManager = {
       // ——— Настройки: управление станциями ———
       'Добавить станцию': 'Add station',
 
-      // ——— Настройки: YouTube-плейлист ———
-      'YouTube-плейлист': 'YouTube playlist',
-      'Добавьте плейлист, видео или YouTube-радио по ссылке — он заиграет очередью в основном плеере, с эквалайзером и историей.': 'Add a playlist, video or YouTube radio by link — it will play as a queue in the main player, with the equalizer and history.',
-      '➕ Добавить плейлист': '➕ Add playlist',
-      'Плейлист пуст': 'Playlist is empty',
-      'Вставьте ссылку на плейлист YouTube': 'Paste a YouTube playlist link',
-      'Загружаем плейлист…': 'Loading playlist…',
-      'Не удалось загрузить плейлист: {error}': 'Failed to load playlist: {error}',
-      'Плейлист добавлен: {n} треков': 'Playlist added: {n} tracks',
-      'LibVLC не начал воспроизведение': 'LibVLC did not start playback',
-      'Не удалось воспроизвести плейлист: {name}': 'Failed to play playlist: {name}',
       'Название станции:': 'Station name:',
       'Например: Моя Радиостанция': 'e.g. My Radio Station',
       'URL потока:': 'Stream URL:',
@@ -240,7 +223,7 @@ const TranslationManager = {
       'Станция успешно обновлена и сохранена!': 'Station updated and saved successfully!',
       'Вы уверены, что хотите удалить эту станцию?': 'Are you sure you want to delete this station?',
       'Ошибка при удалении станции: {error}': 'Error deleting station: {error}',
-      'CatLu Radio NET v3.5.7\n\nПриложение для прослушивания интернет-радио.': 'CatLu Radio NET v3.5.7\n\nInternet radio player.',
+      'CatLu Radio NET v3.5.8\n\nПриложение для прослушивания интернет-радио.': 'CatLu Radio NET v3.5.8\n\nInternet radio player.',
 
       // ——— Проверка станций и обновления ———
       'Проверка…': 'Checking…',
@@ -349,11 +332,6 @@ const TranslationManager = {
       'Сейчас играет:': 'Dabar groja:',
       'Сейчас играет': 'Dabar groja',
       'Проверить станции': 'Tikrinti stotis',
-      'Перемотать назад на 10 секунд': 'Atsukti 10 sekundžių atgal',
-      'Перемотать вперёд на 10 секунд': 'Pirmyn 10 sekundžių',
-      'Позиция трека': 'Takelio pozicija',
-      'Предыдущий трек': 'Ankstesnis takelis',
-      'Следующий трек': 'Kitas takelis',
 
       'Все порталы': 'Visi portalai',
       'Портал': 'Portalas',
@@ -397,7 +375,6 @@ const TranslationManager = {
       'Сброс': 'Atstatyti',
       'Выравнивание громкости': 'Garsumo išlyginimas',
       'Усиление, дБ': 'Pastiprinimas, dB',
-      'YouTube временно отключён': 'YouTube laikinai išjungtas',
       'Перетащите ползунки для настройки частот. Изменения применяются автоматически.': 'Vilkite slankiklius dažniams reguliuoti. Pakeitimai taikomi automatiškai.',
 
       '⚙️ Основные': '⚙️ Pagrindinės',
@@ -418,17 +395,6 @@ const TranslationManager = {
 
       'Добавить станцию': 'Pridėti stotį',
 
-      // ——— YouTube grojaraštis ———
-      'YouTube-плейлист': 'YouTube grojaraštis',
-      'Добавьте плейлист, видео или YouTube-радио по ссылке — он заиграет очередью в основном плеере, с эквалайзером и историей.': 'Įrašykite grojaraštį, vaizdo įrašą ar YouTube radiją pagal nuorodą — jis gros eilėje pagrindiniame grotuve, su ekvalaizeriu ir istorija.',
-      '➕ Добавить плейлист': '➕ Pridėti grojaraštį',
-      'Плейлист пуст': 'Grojaraštis tuščias',
-      'Вставьте ссылку на плейлист YouTube': 'Įklijuokite YouTube grojaraščio nuorodą',
-      'Загружаем плейлист…': 'Įkeliamas grojaraštis…',
-      'Не удалось загрузить плейлист: {error}': 'Nepavyko įkelti grojaraščio: {error}',
-      'Плейлист добавлен: {n} треков': 'Grojaraštis pridėtas: {n} takelio (-ių)',
-      'LibVLC не начал воспроизведение': 'LibVLC nepradėjo leisti',
-      'Не удалось воспроизвести плейлист: {name}': 'Nepavyko paleisti grojaraščio: {name}',
       'Неизвестная ошибка': 'Nežinoma klaida',
       'Название станции:': 'Stoties pavadinimas:',
       'Например: Моя Радиостанция': 'Pvz.: Mano radijo stotis',
@@ -555,11 +521,6 @@ const TranslationManager = {
       'Сейчас играет:': 'מנגן עכשיו:',
       'Сейчас играет': 'מנגן עכשיו',
       'Проверить станции': 'בדיקת תחנות',
-      'Перемотать назад на 10 секунд': 'אחורה 10 שניות',
-      'Перемотать вперёд на 10 секунд': 'קדימה 10 שניות',
-      'Позиция трека': 'מיקום הרצועה',
-      'Предыдущий трек': 'הרצועה הקודמת',
-      'Следующий трек': 'הרצועה הבאה',
 
       'Все порталים': 'כל הפורטלים',
       'Портал': 'פורטל',
@@ -599,7 +560,6 @@ const TranslationManager = {
       'Сброс': 'איפוס',
       'Выравнивание громкости': 'יישור עצמה',
       'Усиление, дБ': 'הגברת עוצמה, דצ״מ',
-      'YouTube временно отключён': 'YouTube מושבת זמנית',
       'Перетащите ползунки для настройки частот. Изменения применяются автоматически.': 'גררו את המחוונים לכוונון תדרים. השינויים מוחלים אוטומטית.',
 
       '⚙️ Основные': '⚙️ כללי',
@@ -620,17 +580,6 @@ const TranslationManager = {
 
       'Добавить станцию': 'הוספת תחנה',
 
-      // ——— YouTube: רשימת השמעה ———
-      'YouTube-плейлист': 'רשימת השמעה ב-YouTube',
-      'Добавьте плейлист, видео или YouTube-радио по ссылке — он заиграет очередью в основном плеере, с эквалайзером и историей.': 'הוסיפו רשימת השמעה, סרטון או רדיו מ-YouTube דרך קישור — הוא ינוגן בתור בתנגן הראשי, עם אקвал라이זר והיסטוריה.',
-      '➕ Добавить плейлист': '➕ הוספת רשימת השמעה',
-      'Плейлист пуст': 'רשימת ההשמעה ריקה',
-      'Вставьте ссылку на плейлист YouTube': 'הדביקו קישור לרשימת השמעה ב-YouTube',
-      'Загружаем плейлист…': 'טוענים רשימת השמעה…',
-      'Не удалось загрузить плейлист: {error}': 'טעינת רשימת ההשמעה נכשלה: {error}',
-      'Плейлист добавлен: {n} треков': 'רשימת ההשמעה נוספה: {n} רצועות',
-      'LibVLC не начал воспроизведение': 'LibVLC לא התחיל נגינה',
-      'Не удалось воспроизвести плейлист: {name}': 'הנגינה ברשימת ההשמעה נכשלה: {name}',
       'Неизвестная ошибка': 'שגיאה לא ידועה',
       'Название станции:': 'שם התחנה:',
       'Например: Моя Радиостанция': 'לדוגמה: הרדיו שלי',

@@ -3,8 +3,9 @@
 // Пойманный баг: хранилище затиралось предустановленными при каждом старте
 // (loadStations писал в файл ДО того, как loadData успевал прочитать список),
 // а чистка выкидывала всё, что не совпадает с id из stations.js — в частности,
-// YouTube-плейлисты «yt-». Симптом: добавил станцию — она есть до выключения,
-// при следующем запуске пропала, хотя избранное и история остались.
+// станции, добавленные вручную (user-) и импорт (imported_). Симптом: добавил
+// станцию — она есть до выключения, при следующем запуске пропала, хотя
+// избранное и история остались.
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert');
@@ -15,8 +16,8 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 // ——— Модуль чистки: проверяем поведением, а не строками ———
 const StationCleanup = require(path.join(root, 'wwwroot', 'js', 'station-cleanup.js'));
 
-// Пользовательские: ручное/онлайн-поиск (user-), импорт, YouTube-плейлисты
-for (const id of ['user-1', 'imported_1', 'user-online-radio-1', 'yt-1791443770756']) {
+// Пользовательские: ручное/онлайн-поиск (user-) и импорт
+for (const id of ['user-1', 'imported_1', 'user-online-radio-1']) {
   assert.ok(
     StationCleanup.isUserAdded({ id }, new Set()),
     `${id} должна считаться пользовательской и не выкидываться чисткой`
@@ -56,15 +57,16 @@ assert.ok(
   assert.deepStrictEqual(result.stations.map(s => s.id), ['x']);
 }
 
-// YouTube-плейлист не конфликтует и сохраняется, порядок списка не меняется
+// Непересекающаяся пользовательская станция не конфликтует и сохраняется,
+// порядок списка не меняется
 {
   const preset = { id: 'rb-1', url: 'https://a.example/1' };
-  const yt = { id: 'yt-1', url: 'https://youtube.com/playlist?list=ABC' };
+  const user = { id: 'user-2', url: 'https://b.example/2' };
   const preset2 = { id: 'rb-2', url: 'https://a.example/2' };
-  const result = StationCleanup.dedupe([preset, yt, preset2], new Set());
+  const result = StationCleanup.dedupe([preset, user, preset2], new Set());
   assert.deepStrictEqual(
     result.stations.map(s => s.id),
-    ['rb-1', 'yt-1', 'rb-2'],
+    ['rb-1', 'user-2', 'rb-2'],
     'порядок и чужие станции должны сохраняться'
   );
 }
@@ -96,10 +98,30 @@ assert.ok(
   'фильтр старых предустановленных должен исключать пользовательские'
 );
 
-// 3) YouTube-станции редактируются/удаляются как пользовательские
+// 3) YouTube из приложения убран: легаси-плейлисты yt- вычищаются при старте
+//    из всех трёх списков разом (станции, избранное, история) и перестают
+//    считаться пользовательскими — иначе мёртвые записи останутся навсегда.
 assert.ok(
-  renderer.includes("startsWith('yt-')"),
-  'isUserStation не знает про yt- — YouTube-плейлист нельзя будет удалить'
+  !StationCleanup.USER_ID_PREFIXES.includes('yt-'),
+  "'yt-' всё ещё в USER_ID_PREFIXES — легаси-станции не уйдут под чистку"
+);
+assert.ok(
+  !renderer.includes("stationId.startsWith('yt-')"),
+  'isUserStation снова знает про yt- — YouTube в приложение вернулся'
+);
+const purgeAt = renderer.indexOf('const isLegacyYt =');
+assert.ok(purgeAt !== -1, 'В loadData нет вычистки легаси-YouTube-плейлистов');
+const purgeBlock = renderer.slice(purgeAt, purgeAt + 900);
+for (const [marker, what] of [
+  ['saveStations(state.stations)', 'станции'],
+  ['saveFavorites(state.favorites)', 'избранное'],
+  ['saveHistory(state.history)', 'история']
+]) {
+  assert.ok(purgeBlock.includes(marker), `Вычистка YouTube не сохраняет ${what} — записи вернутся после перезапуска`);
+}
+assert.ok(
+  purgeBlock.includes("item.type === 'youtube-playlist'") && purgeBlock.includes("item.id.startsWith('yt-')"),
+  'Вычистка ловит только один из двух форматов легаси-плейлистов'
 );
 
 // 4) Восстановление пропавшей избранной станции из истории
@@ -121,6 +143,13 @@ assert.ok(
   'getStore через ToString() вернулся — версии станций снова не будут читаться'
 );
 
+// ——— YouTube удалён из хоста и моста полностью ———
+for (const file of ['MainForm.cs', 'wwwroot/js/api-adapter.js', 'wwwroot/js/renderer.js', 'wwwroot/index.html']) {
+  const src = read(...file.split('/'));
+  const leftover = src.match(/YtDlp|resolveYoutube|playYoutube|ytQueue|seekNative|nativeEnded/i);
+  assert.ok(!leftover, `В ${file} остался код YouTube: ${leftover && leftover[0]}`);
+}
+
 // ——— Разметка: модуль подключён до renderer ———
 const html = read('wwwroot', 'index.html');
 const cleanupTag = html.indexOf('station-cleanup.js');
@@ -130,4 +159,4 @@ assert.ok(
   'station-cleanup.js должен подключаться до renderer.js'
 );
 
-console.log('Stations persistence: OK (чистка не затирает, дубликаты в пользу пользователя, избранное восстанавливается)');
+console.log('Stations persistence: OK (чистка не затирает, дубликаты в пользу пользователя, легаси-YouTube вычищен)');

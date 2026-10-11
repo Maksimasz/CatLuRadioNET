@@ -48,11 +48,6 @@ namespace CatLuRadio
         private JArray? nativeEqValues;
         private double nativeGainDb = 6;
         private TaskCompletionSource<bool>? nativeStart;
-        // Дроссель событий позиции (nativeTime): TimeChanged сыплет десятки
-        // событий в секунду — на UI-поток уходит не чаще раза в 250 мс.
-        private long nativeTimeTick;
-        private long lastSentTime = long.MinValue;
-        private long lastSentLength = long.MinValue;
         private const string UpdatesApiUrl = "https://api.github.com/repos/Maksimasz/CatLuRadioNET/releases/latest";
         private const string UpdateAssetPrefix = "https://github.com/Maksimasz/CatLuRadioNET/releases/download/";
 
@@ -88,11 +83,6 @@ namespace CatLuRadio
             nativePlayer = new MediaPlayer(nativeVlc);
             nativePlayer.Playing += (_, _) => nativeStart?.TrySetResult(true);
             nativePlayer.EncounteredError += (_, _) => { nativeStart?.TrySetResult(false); OnNativeError(); };
-            // Конец текущего файла (не потока): страница решает, что делать —
-            // для YouTube-очереди это сигнал перейти к следующему треку.
-            nativePlayer.EndReached += (_, _) => OnNativeEnded();
-            // Позиция внутри трека: страница рисует полосу перемотки YouTube.
-            nativePlayer.TimeChanged += (_, _) => OnNativeTimeTick();
             LoadStore();
             InitializeComponent();
         }
@@ -317,12 +307,6 @@ namespace CatLuRadio
                     case "checkStream":
                         _ = CheckStream(data["url"]?.ToString() ?? "", callbackId);
                         break;
-                    case "resolveYoutubePlaylist":
-                        _ = ResolveYoutubePlaylist(data["url"]?.ToString() ?? "", callbackId);
-                        break;
-                    case "resolveYoutubeTrack":
-                        _ = ResolveYoutubeTrack(data["videoId"]?.ToString() ?? "", callbackId);
-                        break;
                     case "playNative":
                         _ = PlayNative(data["url"]?.ToString() ?? "", data["volume"]?.Value<double>() ?? 0.5, callbackId);
                         break;
@@ -336,10 +320,6 @@ namespace CatLuRadio
                         break;
                     case "stopNative":
                         StopNative();
-                        SendCallback(callbackId, new { success = true });
-                        break;
-                    case "seekNative":
-                        SeekNative(data["ms"]?.Value<long>() ?? 0);
                         SendCallback(callbackId, new { success = true });
                         break;
                     case "setNativeVolume":
@@ -409,10 +389,21 @@ namespace CatLuRadio
 
         private void SetWindowSize(int width, int height) {
             WindowState = FormWindowState.Normal;
-            ClientSize = new Size(Math.Max(width, MinimumSize.Width), Math.Max(height, MinimumSize.Height));
+            // Размер меряется по фактическому контенту (ряды кнопок, полосы),
+            // а рабочая область экрана — жёсткий потолок: иначе окно уезжает
+            // за край монитора и его нельзя ни уместить, ни сдвинуть.
+            var area = Screen.FromControl(this).WorkingArea;
+            var w = Math.Min(Math.Max(width, MinimumSize.Width), area.Width);
+            var h = Math.Min(Math.Max(height, MinimumSize.Height), area.Height);
+            ClientSize = new Size(w, h);
         }
         private void SetWindowMinimumSize(int width, int height) {
-            MinimumSize = new Size(Math.Max(0, width), Math.Max(0, height));
+            // То же для минимума: длинные подписи по-иному языку разгоняли
+            // MinimumSize шире экрана, и контент всё равно обрезался.
+            var area = Screen.FromControl(this).WorkingArea;
+            MinimumSize = new Size(
+                Math.Clamp(width, 0, Math.Max(0, area.Width)),
+                Math.Clamp(height, 0, Math.Max(0, area.Height)));
         }
         private void SetMiniPlayer(bool enabled) {
             WindowState = FormWindowState.Normal;
@@ -500,97 +491,14 @@ namespace CatLuRadio
             nativeMedia = null;
         }
 
-        // Трек доиграл естественно — сообщаем странице событием (без callbackId).
-        // Обработчик вызывается из потока libvlc: только BeginInvoke, никаких
-        // вызовов самого плеера из этого потока (классический deadlock VLC).
-        private void OnNativeEnded() {
-            // EndReached приходит с фонового потока libvlc, а свойство CoreWebView2
-            // вне UI-потока само бросает InvalidOperationException ("can only be
-            // accessed from the UI thread") — guard в тихий catch это глотал,
-            // страница не получала nativeEnded и очередь YouTube замирала после
-            // первого трека. Как и в SendCallback, сначала переезжаем на UI-поток.
-            try {
-                if (InvokeRequired) { BeginInvoke(OnNativeEnded); return; }
-            } catch (Exception ex) {
-                AppLog.Error("nativeEnded: BeginInvoke не прошёл", ex);
-                return;
-            }
-            AppLog.Info("LibVLC: EndReached — двигаем очередь (nativeEnded)");
-            try {
-                if (!IsHandleCreated || webView?.CoreWebView2 is null) {
-                    AppLog.Warn($"nativeEnded: веб-вью не готова (handle={IsHandleCreated}, webView={(webView is null ? "null" : "ok")})");
-                    return;
-                }
-                webView.CoreWebView2.PostWebMessageAsString(
-                    JsonConvert.SerializeObject(new { @event = "nativeEnded" }));
-                AppLog.Info("nativeEnded: событие отправлено в страницу");
-            } catch (Exception ex) {
-                AppLog.Error("nativeEnded: не удалось отправить событие", ex);
-            }
-        }
-
-        // Позиция внутри трека для полосы перемотки YouTube. TimeChanged
-        // приходит с фонового потока libvlc и очень часто: дросселируем на
-        // этом же потоке (не чаще, чем раз в 250 мс), дальше — BeginInvoke
-        // на UI-поток. Как и nativeEnded: никаких вызовов плеера из потока
-        // libvlc, чтение Time/Length только на UI-потоке.
-        private void OnNativeTimeTick() {
-            long now = Environment.TickCount64;
-            if (now - Volatile.Read(ref nativeTimeTick) < 250) return;
-            Volatile.Write(ref nativeTimeTick, now);
-            try {
-                if (!IsHandleCreated) return;
-                if (InvokeRequired) { BeginInvoke(SendNativeTime); return; }
-                SendNativeTime();
-            } catch (Exception ex) {
-                AppLog.Error("nativeTime: BeginInvoke не прошёл", ex);
-            }
-        }
-
-        private void SendNativeTime() {
-            try {
-                if (!IsHandleCreated || webView?.CoreWebView2 is null) return;
-                long time = nativePlayer.Time;    // мс; -1 когда медиа уже снято
-                long length = nativePlayer.Length;
-                // Дежавю не шлём: без этого страница получала бы по 4 события
-                // в секунду даже на паузе.
-                if (time == lastSentTime && length == lastSentLength) return;
-                lastSentTime = time;
-                lastSentLength = length;
-                webView.CoreWebView2.PostWebMessageAsString(
-                    JsonConvert.SerializeObject(new { @event = "nativeTime", time, length }));
-            } catch (Exception ex) {
-                AppLog.Error("nativeTime: не удалось отправить событие", ex);
-            }
-        }
-
-        // Перемотка по запросу страницы (ms — новая позиция в миллисекундах).
-        // Живые потоки (радио) длительности не имеют — Length <= 0, перемотка
-        // для них бессмысленна и молча игнорируется.
-        private void SeekNative(long ms) {
-            try {
-                long length = nativePlayer.Length;
-                if (length <= 0) return;
-                long target = Math.Clamp(ms, 0, length);
-                nativePlayer.Time = target;
-                // Не ждём следующего TimeChanged (дроссель до 250 мс):
-                // сразу подтверждаем позицию, полоса прыгает мгновенно.
-                lastSentTime = -1;
-                SendNativeTime();
-            } catch (Exception ex) {
-                AppLog.Error("seekNative: перемотка не удалась", ex);
-            }
-        }
-
-        // Поток умер посреди игры (обрыв сети, 403 от googlevideo): страница
-        // должна узнать об этом событием — без него очередь молчит после обрыва,
-        // а кнопка Play зовёт resumeNative на мёртвом медиа и ничего не делает.
-        // Как и OnNativeEnded: только BeginInvoke, без вызовов плеера из
-        // потока libvlc.
+        // Поток умер посреди игры (обрыв сети): страница должна узнать об этом
+        // событием — иначе кнопка Play зовёт resumeNative на мёртвом медиа и
+        // ничего не делает. Обработчик вызывается из потока libvlc: только
+        // BeginInvoke, без вызовов самого плеера из этого потока.
         private void OnNativeError() {
             // EncounteredError тоже приходит с потока libvlc: вне UI-потока
-            // чтение CoreWebView2 бросает InvalidOperationException (см. OnNativeEnded),
-            // поэтому сначала BeginInvoke, и только на UI-потоке — guard и отправка.
+            // чтение CoreWebView2 бросает InvalidOperationException — поэтому
+            // сначала BeginInvoke, и только на UI-потоке — отправка.
             AppLog.Warn("LibVLC: ошибка потока воспроизведения");
             try {
                 if (InvokeRequired) { BeginInvoke(OnNativeError); return; }
@@ -602,162 +510,8 @@ namespace CatLuRadio
             }
         }
 
-        // Список треков YouTube-плейлиста (или одиночного видео) для добавления
-        // в станции. Запрашивается один раз при импорте: сами ссылки на аудио
-        // здесь не нужны — они истекают и резолвятся перед каждым треком.
-        // Резолвит yt-dlp (см. YtDlp.cs): один вызов --flat-playlist -j отдаёт
-        // и треки, и заголовок с автором плейлиста (playlist_title /
-        // playlist_uploader), и обложку первого видео — проверено на живом
-        // плейлисте пользователя 2026-10-09: 128 записей за 2.6 с.
-        private async Task ResolveYoutubePlaylist(string url, string callbackId) {
-            try {
-                var (playlistId, videoId) = ParseYoutubeUrl(url);
-                if (playlistId is null && videoId is null) {
-                    SendCallback(callbackId, new { success = false, error = "Не похоже на ссылку YouTube" });
-                    return;
-                }
-
-                string title = "", author = "", thumbnail = "";
-                var tracks = new JArray();
-
-                if (playlistId is not null) {
-                    // Таймаут ниже мостового (resolveYoutubePlaylist: 60 с) —
-                    // иначе мост ответит первым null, а хост продолжит работать.
-                    var (stdout, error) = await YtDlp.RunAsync(new[] {
-                        "--flat-playlist", "--no-warnings", "-j",
-                        $"https://www.youtube.com/playlist?list={playlistId}"
-                    }, 55_000);
-                    if (error is not null) {
-                        SendCallback(callbackId, new { success = false, error });
-                        return;
-                    }
-                    foreach (var line in SplitLines(stdout)) {
-                        if (tracks.Count >= 200) break;
-                        JObject entry;
-                        try { entry = JObject.Parse(line); }
-                        catch { continue; } // служебная строка не должна ронять весь импорт
-                        tracks.Add(TrackJson(entry));
-                        if (thumbnail.Length == 0) thumbnail = ThumbUrl(entry);
-                        if (title.Length == 0) {
-                            title = entry["playlist_title"]?.ToString() ?? "";
-                            author = entry["playlist_uploader"]?.ToString() ?? entry["playlist_channel"]?.ToString() ?? "";
-                        }
-                    }
-                } else {
-                    var (stdout, error) = await YtDlp.RunAsync(new[] {
-                        "--no-playlist", "--no-warnings", "-j",
-                        $"https://www.youtube.com/watch?v={videoId}"
-                    }, 45_000);
-                    if (error is not null) {
-                        SendCallback(callbackId, new { success = false, error });
-                        return;
-                    }
-                    var line = SplitLines(stdout).FirstOrDefault();
-                    if (line is null) {
-                        SendCallback(callbackId, new { success = false, error = "yt-dlp не вернул описание видео" });
-                        return;
-                    }
-                    var entry = JObject.Parse(line);
-                    title = entry["title"]?.ToString() ?? "";
-                    author = entry["channel"]?.ToString() ?? entry["uploader"]?.ToString() ?? "";
-                    thumbnail = ThumbUrl(entry);
-                    tracks.Add(TrackJson(entry));
-                }
-
-                if (tracks.Count == 0) {
-                    SendCallback(callbackId, new { success = false, error = "Плейлист пуст" });
-                    return;
-                }
-                SendCallback(callbackId, new { success = true, title, author, thumbnail, tracks });
-            } catch (Exception ex) { SendCallback(callbackId, new { success = false, error = ex.Message }); }
-        }
-
-        // Прямая ссылка на аудио одного трека. Вызывается непосредственно перед
-        // запуском: googlevideo URL живёт несколько часов и привязан к IP,
-        // поэтому кешировать его бессмысленно.
-        // yt-dlp вместо YouTubeExplode: у последней с 2026-10-09 каждый резолв
-        // отвечал 403 Forbidden («Не удалось воспроизвести плейлист» — см.
-        // app.log), yt-dlp отдаёт ссылку за ~3 с (замер: itag 251,
-        // audio/webm, HTTP 206 — LibVLC такой поток играет).
-        private async Task ResolveYoutubeTrack(string videoId, string callbackId) {
-            if (string.IsNullOrWhiteSpace(videoId)) {
-                SendCallback(callbackId, new { success = false, error = "Пустой идентификатор видео" });
-                return;
-            }
-            // Таймаут ниже мостового (resolveYoutubeTrack: 30 с): мост при
-            // превышении резолвит null и очередь уходит на пропуск трека,
-            // а хост не должен работать вхолостую после ответа.
-            var (stdout, error) = await YtDlp.RunAsync(new[] {
-                "--no-playlist", "--no-warnings",
-                "-f", "bestaudio/best", "-g",
-                $"https://www.youtube.com/watch?v={videoId}"
-            }, 25_000);
-            if (error is not null) {
-                SendCallback(callbackId, new { success = false, error });
-                return;
-            }
-            var streamUrl = SplitLines(stdout).FirstOrDefault();
-            if (streamUrl is null || !(streamUrl.StartsWith("http://") || streamUrl.StartsWith("https://"))) {
-                SendCallback(callbackId, new { success = false, error = "Прямая ссылка на аудио не получена" });
-                return;
-            }
-            SendCallback(callbackId, new { success = true, url = streamUrl });
-        }
-
-        // Одна запись трека в том виде, в каком её ждёт страница
-        // (см. addYoutubePlaylist в renderer.js).
-        private static JObject TrackJson(JObject entry) {
-            double seconds = 0;
-            try { seconds = entry["duration"]?.Value<double?>() ?? 0; }
-            catch { /* у неполных записей duration бывает не числом */ }
-            return new JObject {
-                ["id"] = entry["id"]?.ToString() ?? "",
-                ["title"] = entry["title"]?.ToString() ?? "",
-                ["author"] = entry["channel"]?.ToString() ?? entry["uploader"]?.ToString() ?? "",
-                ["duration"] = (int)seconds
-            };
-        }
-
-        // Обложка: массив thumbnails, берём последний элемент — самый крупный
-        // (maxresdefault), как и делал старый резолвер.
-        private static string ThumbUrl(JObject entry) {
-            var thumbnails = entry["thumbnails"] as JArray;
-            var last = thumbnails is { Count: > 0 } ? thumbnails[thumbnails.Count - 1] as JObject : null;
-            return last?["url"]?.ToString() ?? "";
-        }
-
-        private static IEnumerable<string> SplitLines(string? text) =>
-            (text ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        // Понимает основные формы ссылок: playlist?list=..., watch?v=...&list=...,
-        // youtu.be/ID, shorts/ID, live/ID. Плейлист важнее одиночного видео:
-        // watch?v=X&list=RD... — это «радио» вокруг видео X.
-        private static (string? PlaylistId, string? VideoId) ParseYoutubeUrl(string url) {
-            if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return (null, null);
-            string? list = QueryParam(uri, "list");
-            string? video = QueryParam(uri, "v");
-            if (string.IsNullOrWhiteSpace(video)) {
-                var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (segments.Length >= 2 && segments[0] is "shorts" or "embed" or "live" or "v") video = segments[1];
-                else if (uri.Host.Contains("youtu.be", StringComparison.OrdinalIgnoreCase)) video = segments.FirstOrDefault();
-            }
-            return (
-                string.IsNullOrWhiteSpace(list) ? null : list,
-                string.IsNullOrWhiteSpace(video) ? null : video
-            );
-        }
-
-        private static string? QueryParam(Uri uri, string name) {
-            foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)) {
-                var parts = pair.Split('=', 2);
-                if (string.Equals(Uri.UnescapeDataString(parts[0]), name, StringComparison.OrdinalIgnoreCase))
-                    return parts.Length > 1 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')) : "";
-            }
-            return null;
-        }
-
         // Эквалайзер LibVLC: values = null снимает полосы (чистый проход —
-        // выключенный чекбокс, YouTube), иначе навешиваем полосы.
+        // выключенный чекбокс), иначе навешиваем полосы.
         //
         // Усиление (Preamp) живёт отдельно от полос: раньше +6 дБ вшивались
         // в каждый экземпляр и применялись к любому источнику, т.е. и к
@@ -799,10 +553,8 @@ namespace CatLuRadio
             if (haveBands) {
                 for (uint index = 0; index < nativeEqualizer.BandCount && index < nativeEqValues!.Count; index++) {
                     // Индексатор JArray принимает только int/string: uint давал
-                    // ArgumentException ("Int32 array index expected") до SendCallback —
-                    // страница висела 20 секунд на каждый запуск трека, и за это
-                    // время у коротких треков успевало сработать nativeEnded,
-                    // которое guard isSwitching молча отбрасывал.
+                    // ArgumentException ("Int32 array index expected") — страница
+                    // висела до таймаута моста на каждый запуск станции.
                     nativeEqualizer.SetAmp(Math.Clamp(nativeEqValues[(int)index]?.Value<float>() ?? 0, -12, 12), index);
                 }
             }
@@ -812,6 +564,7 @@ namespace CatLuRadio
             if (!success) { nativeEqualizer.Dispose(); nativeEqualizer = null; }
             return success;
         }
+
         private void ShowSaveDialog(string defaultPath, string callbackId) {
             using var dialog = new SaveFileDialog { FileName = Path.GetFileName(defaultPath), Filter = "JSON files|*.json|All files|*.*", Title = "Save file" };
             if (dialog.ShowDialog() == DialogResult.OK) {

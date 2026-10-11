@@ -11,9 +11,8 @@ installer/dependencies/
 # WebView2 Fixed Version Runtime (668 МБ) — скачивается отдельно,
 # см. installer/downloads/*.cab. Не коммитим: это дистрибутив Microsoft.
 WebView2Runtime/
-# yt-dlp.exe (~17 МБ) — резолвер YouTube (см. YtDlp.cs): качается с
-# github.com/yt-dlp/yt-dlp лежит локально в корне, в сборку копируется
-# через CopyToOutputDirectory, в git не попадает.
+# yt-dlp.exe (~17 МБ) — бинарник от старых сборок: приложению он больше
+# не нужен, лежит только локально, в git и в установщик не попадает.
 /yt-dlp.exe
 # CatLuRadioNet.ico — черновая иконка, нигде не используется
 # (ApplicationIcon и установщик работают с icon.ico), лежит только локально.

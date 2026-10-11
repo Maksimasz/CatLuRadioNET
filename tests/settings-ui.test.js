@@ -55,7 +55,7 @@ assert.match(index, /<div class="form-row">[\s\S]*?languageSelect[\s\S]*?themeSe
 assert.match(index, /<div class="form-row">[\s\S]*?stationCountry[\s\S]*?stationGenre[\s\S]*?<\/div>/,
   'Страна и жанр не в одну строку');
 assert.match(css, /\.settings-section \{\s*margin-top: 8px;\s*padding-top: 16px;\s*border-top: 1px solid var\(--md-outline\);/,
-  'Нет разделительной линии между секциями настроек (YouTube, станции, импорт)');
+  'Нет разделительной линии между секциями настроек (станции, импорт)');
 
 // ===== 4. Динамические размеры =====
 assert.match(css, /\.online-results \{[\s\S]{0,400}flex: 1;/,
