@@ -418,7 +418,10 @@ namespace CatLuRadio
             MaximizeBox = !enabled;
             MinimumSize = enabled ? Size.Empty : new Size(500, 500);
             if (enabled) {
-                Size = new Size(600, 110);
+                // Свёрнутое окно под макет мини-плеера (кот 34px + станция +
+                // время): ClientSize 600×90, чтобы три строки влезали без
+                // обрезки — прежний Size 600×110 давал ~72px клиентской высоты.
+                ClientSize = new Size(600, 90);
             } else {
                 // Возврат из мини-плеера — ровно тот же кадр, что и при старте
                 // (ClientSize, а не Size: рамка добавляла бы пару пикселей).

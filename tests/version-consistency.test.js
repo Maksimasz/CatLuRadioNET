@@ -26,4 +26,10 @@ if (about && about[1] !== version) {
   throw new Error(`Диалог «О программе» показывает v${about[1]}, а приложение ${version}`);
 }
 
-console.log(`Versions: OK (${version}, ссылок ?v=: ${cacheRefs.length}${about ? ', «О программе» совпадает' : ''})`);
+// Заголовок мини-плеера (свёрнутое окно) тоже показывает версию
+const miniVersion = index.match(/id="miniPlayerVersion">v([0-9][0-9.]*)</);
+if (miniVersion && miniVersion[1] !== version) {
+  throw new Error(`Мини-плеер показывает v${miniVersion[1]}, а приложение ${version}`);
+}
+
+console.log(`Versions: OK (${version}, ссылок ?v=: ${cacheRefs.length}${about ? ', «О программе» совпадает' : ''}${miniVersion ? ', мини-плеер совпадает' : ''})`);
