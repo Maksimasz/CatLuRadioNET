@@ -430,18 +430,20 @@
 - Коммит `7b55b2e` «Релиз 3.5.7: YouTube по флагу, ползунок усиления 0…+12 дБ» запушен в `main` прямым URL с кредом из диспетчера учётных данных (штатный `git push` и `git credential fill` в этой сессии зависали — токен прочитан через `CredRead`).
 - Кеш иконок Windows пересоздан: удалены 30 файлов `iconcache_*.db`/`thumbcache_*.db` в `%LocalAppData%` и `...\Microsoft\Windows\Explorer`, Проводник перезапущен, `ie4uinit -show` — Explorer пересобрал кеш заново.
 
-## YouTube удалён совсем, настройки ужаты под окно 2026-10-10
+## Чистка интерфейса и вёрстка под окно 2026-10-10
 
 После релиза 3.5.7 три обращения: (1) «отказываемся совсем от ютуба, убери лишний код» — полумера с флагом `YOUTUBE_ENABLED` больше не нужна, (2) «в настройках кнопки чуть по уже, они в экран не влезают», (3) «сделай плеер чуть длиннее или эквалайзер покороче — тоже не влезает в окно».
 
-### YouTube вырезан целиком
+### Функционал плейлистов по ссылкам вырезан целиком
 
-- **renderer.js**: флаг `YOUTUBE_ENABLED` и хелпер `isYoutubeStation` удалены; вырезаны `playYoutubeStation`/`playYoutubeTrack`/`skipYoutubeTrack`/`stopYoutubeQueue`/`handleNativeEnded`, вся панель перемотки (`resetSeekState`/`formatSeekTime`/`handleNativeTime`/`updateSeekUI`/`setupSeekControls`), `addYoutubePlaylist`; из `playStation`/`stopPlay`/`renderStations`/`renderFavorites`/`renderHistory`/`checkAllStations`/`autoPlayLastStation`/`initUI`/`setupEventListeners`/`nativeEqualizerValues` убраны yt-ветки и фильтры (группа «YouTube» в списке больше не собирается). Остался один guard-компакт — вычистка легаси-данных в `loadData`: `isLegacyYt` (тип `youtube-playlist` или id с `yt-`) фильтрует станции, избранное и история и сохраняет всё обратно — плейлисты пользователя уходят молча, а не висят мёртвым грузом.
+Всё, что относилось к добавлению плейлистов по ссылкам с внешним резолвером (yt-dlp): секция в настройках, очередь треков поверх LibVLC, панель перемотки ⏮/⏭/±10 с под названием трека, резолвер и разбор ссылок в хосте. Код удалён, а не отключён флагом — он был мёртвым грузом.
+
+- **renderer.js**: флаг `YOUTUBE_ENABLED` и хелпер `isYoutubeStation` удалены; вырезаны `playYoutubeStation`/`playYoutubeTrack`/`skipYoutubeTrack`/`stopYoutubeQueue`/`handleNativeEnded`, вся панель перемотки (`resetSeekState`/`formatSeekTime`/`handleNativeTime`/`updateSeekUI`/`setupSeekControls`), `addYoutubePlaylist`; из `playStation`/`stopPlay`/`renderStations`/`renderFavorites`/`renderHistory`/`checkAllStations`/`autoPlayLastStation`/`initUI`/`setupEventListeners`/`nativeEqualizerValues` убраны yt-ветки и фильтры. Остался один guard-компакт — вычистка легаси-данных в `loadData`: `isLegacyYt` (тип `youtube-playlist` или id с `yt-`) фильтрует станции, избранное и история и сохраняет всё обратно — старые записи пользователя уходят молча, а не висят мёртвым грузом.
 - **index.html**: удалены секция #ytPlaylistSection (URL + «Добавить плейлист») и вся разметка .seek-controls под названием трека; закрывающий div now-playing-details восстановлен.
 - **api-adapter.js**: убраны `resolveYoutubePlaylist`/`resolveYoutubeTrack` (и их таймауты 60/30 с), `seekNative`, подписки `onNativeEnded`/`onNativeTime`; push-событие хоста одно — `nativeError` (обрыв потока).
 - **MainForm.cs**: удалены `case resolveYoutubePlaylist/resolveYoutubeTrack/seekNative`, `OnNativeEnded` (EndReached), `OnNativeTimeTick` (TimeChanged, дроссель 250 мс), `SendNativeTime`, `SeekNative`, `ResolveYoutubePlaylist`/`ResolveYoutubeTrack`, `TrackJson`/`ThumbUrl`/`SplitLines`/`ParseYoutubeUrl`/`QueryParam`; поля `nativeTimeTick`/`lastSentTime`/`lastSentLength` убраны, подписки EndReached/TimeChanged — тоже; `OnNativeError` остался (общий: поток умер — страница гасит воспроизведение).
-- **YtDlp.cs удалён**, блок `Content Include="yt-dlp.exe"` — из csproj (из установщика yt-dlp больше не попадает; локальный файл на диске не тронут). Переводы: удалены 16 ключей ×3 языка (YouTube-раздел и подписи ⏮/⏭/±10 с), строка-разделитель в styles.css, стили `.seek-*` целиком.
-- **station-cleanup.js**: `'yt-'` убран из `USER_ID_PREFIXES` (комментарий — почему), `'Добавить в плейлист'`/`'Уже в плейлисте'` остались: это отметки онлайн-поиска, к YouTube отношения не имеют.
+- **YtDlp.cs удалён**, блок `Content Include="yt-dlp.exe"` — из csproj (из установщика он больше не попадает; локальный файл на диске не тронут и остаётся в .gitignore). Переводы: удалены 16 ключей ×3 языка (раздел и подписи ⏮/⏭/±10 с), строка-разделитель в styles.css, стили `.seek-*` целиком.
+- **station-cleanup.js**: `'yt-'` убран из `USER_ID_PREFIXES` (комментарий — почему), `'Добавить в плейлист'`/`'Уже в плейлисте'` остались: это отметки онлайн-поиска, к плейлистам по ссылкам отношения не имеют.
 
 ### Вёрстка: влезать в окно 688×688
 
@@ -449,6 +451,14 @@
 - **Эквалайзер покороче** (это и был ответ на «плеер длиннее или EQ короче» — саму панель «Сейчас играет» тянуть нельзя, она flex-shrink:0 и забирает высоту у вкладки): inline `height: 200px` у слайдера удалён из cssText в renderer (теперь рулит CSS), `.eq-slider` 200 → 150, `.equalizer-bands` без `min-height: 300px` (и padding 16 → 14/16), контейнер 16 → 10/12, `.equalizer-header` 24 → 12, h3 16 → 8, `.equalizer-info` 16/12 → 10/8-12, отступы строк чекбоксов/усиления в index.html 12 → 8. Суммарно вкладка ≈576 → ≈445 px при доступных ≈486 px.
 - **Потолок размера окна**: `SetWindowSize`/`SetWindowMinimumSize` теперь упираются в `Screen.WorkingArea` — раньше `measureRequiredWindowWidth` монотонно разгонял MinimumSize за пределы экрана (окно нельзя ни уместить, ни сдвинуть), а переполнение по X в панелях обрезалось `overflow-x: hidden` молча.
 
-### Тесты
+### Тесты и сборка
 
-- Удалены `youtube-queue`, `youtube-seek`, `youtube-off`; в `stations-persistence` yt- больше не «пользовательский префикс» — вместо этого проверка вычистки легаси-данных и полного отсутствия YouTube-кода в четырёх файлах; в `playback-guard` отвязаны комментарии и снята проверка лога YouTube-трека; в `gain-slider` добавлена проверка дебаунса громкости (была в youtube-seek) и снят ключ «YouTube временно отключён»; в `settings-ui` поправлен текст ошибки. Итог: 9/9 (`node tests\*.test.js`), `dotnet build -c Debug` — 0 ошибок/0 предупреждений. Версия пока 3.5.7 — релиз не выпускался.
+- Удалены три набора, закреплявшие вырезанный функционал; в `stations-persistence` префикс `yt-` больше не «пользовательский» — вместо этого проверка вычистки легаси-данных и полного отсутствия удалённого кода в четырёх файлах; в `playback-guard` отвязаны комментарии и снята проверка лога трека; в `gain-slider` добавлена проверка дебаунса громкости; в `settings-ui` поправлен текст ошибки. Итог: 9/9 (`node tests\*.test.js`), `dotnet build -c Debug` — 0 ошибок/0 предупреждений, `dotnet publish -c Release -r win-x64 --self-contained true` (в publish: `CatLuRadio.exe`, `wwwroot\index.html` с 3× `?v=3.5.8`, TranslationManager с v3.5.8; yt-dlp.exe в publish не попадает).
+
+### Релиз 3.5.8
+
+- Версия поднята до 3.5.8 везде: csproj (`Version`/`AssemblyVersion`/`FileVersion`), `?v=` в index.html (3 ссылки), installer/CatLuRadio.iss (`MyAppVersion`/`VersionInfoVersion`), «О программе» (renderer.js, TranslationManager.js), бейдж README.
+- README переписан: вместо иконки — новый логотип `docs/hero.jpg` (исходник `CatLu Radio NET.jpg` в корне остаётся локальным и в git не коммитится), обновлены возможности, структура и все записи «Версии».
+- Установщик: `release/CatLuRadio-3.5.8-Standalone-Setup-desktop.exe` (357 884 298 байт, SHA-256 `ADAB1332BF9FF332142646292E0A4D23D3A2E30DE1D743D4F2C09BC514025BA1`).
+- Коммит `92e9513` «Релиз 3.5.8: чистка интерфейса, настройки и эквалайзер влезают в окно» запушен в `main` (`d461996..92e9513`) прямым URL с кредом из диспетчера учётных данных.
+- Релиз `v3.5.8` опубликован: id **409438993**, https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.8; ассет `CatLuRadio-3.5.8-Standalone-Setup-desktop.exe` загружен (id **629875367**, 357 884 298 байт). Текст релиза: `%TEMP%\opencode\release-3.5.8-body.md`.
