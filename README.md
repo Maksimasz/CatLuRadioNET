@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/hero.jpg" width="260" alt="CatLu Radio NET — кот в наушниках">
+<img src="docs/CatLuRadioNet.jpg" width="300" alt="CatLu Radio NET — кот в наушниках">
 
 # 📻 CatLu Radio NET
 
