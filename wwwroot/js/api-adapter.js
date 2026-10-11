@@ -242,6 +242,10 @@ window.AppAPI = {
     saveSettings: (s) => WebView2API.set('settings', s),
     getStationsVersion: () => WebView2API.get('stationsVersion', null),
     saveStationsVersion: (v) => WebView2API.set('stationsVersion', v),
+    // Журнал правок каталога: { id: 'removed' | 'edited' }. Без него стартовая
+    // пересборка возвращала удалённые предустановленные и откатывала правки.
+    getStationMods: () => WebView2API.get('stationMods', {}),
+    saveStationMods: (m) => WebView2API.set('stationMods', m),
     getHistory: () => WebView2API.get('history', []),
     saveHistory: (h) => WebView2API.set('history', h),
     checkForUpdate: () => sendToNative('checkForUpdate'),
@@ -257,6 +261,9 @@ window.AppAPI = {
     log: (message) => WebView2API.log(message),
     // nativeError — push-событие хоста: поток умер посреди игры.
     onNativeError: (handler) => WebView2API.onHostEvent('nativeError', handler),
+    // updateProgress — push-событие хоста: проценты скачивания установщика
+    // обновления (иначе после клика «Обновить» экран молчит минутами).
+    onUpdateProgress: (handler) => WebView2API.onHostEvent('updateProgress', handler),
     searchOnlineStations: async (name = '', country = '', portal = 'all') => {
         const include = source => portal === 'all' || portal === source;
         let radioBrowser = [];

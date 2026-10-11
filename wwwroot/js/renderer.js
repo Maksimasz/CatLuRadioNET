@@ -342,13 +342,29 @@ async function loadData() {
     // ВСЕГДА использовать только станции из stations.js (из CatLu-radio-stations.json)
     // Это проверенные рабочие станции - других предустановленных быть не должно
     
+    // Журнал правок каталога: удалённые ('removed') и отредактированные
+    // ('edited') станции stations.js. Без него стартовая пересборка возвращала
+    // удалённые предустановленные и откатывала правки к исходным (жалоба
+    // 2026-10-11 «списки редактируются только при работе плеера»).
+    const stationMods = await window.AppAPI.getStationMods() || {};
+    const removedIds = new Set(Object.keys(stationMods).filter(id => stationMods[id] === 'removed'));
+
+    // Отредактированная станция каталога остаётся ЕГО версией из сохранённого
+    // списка; нетронутая — свежей копией из stations.js.
+    const mineOrFresh = (station) => {
+      const mine = state.stations.find(s => s.id === station.id);
+      return mine && stationMods[station.id] === 'edited' ? { ...mine } : { ...station };
+    };
+
     // Если станций нет (первый запуск) - загрузить предустановленные
+    // минус удалённые: «удалил всё» — тоже осознанный выбор, а не повод
+    // засеять каталог заново.
     if (!state.stations || state.stations.length === 0) {
       // Убедиться что нет дубликатов
       const uniqueStations = [];
       const seenIds = new Set();
       for (const station of defaultStationsList) {
-        if (station.id && !seenIds.has(station.id)) {
+        if (station.id && !seenIds.has(station.id) && !removedIds.has(station.id)) {
           seenIds.add(station.id);
           uniqueStations.push({ ...station });
         }
@@ -357,67 +373,46 @@ async function loadData() {
       await window.AppAPI.saveStations(state.stations);
       await window.AppAPI.saveStationsVersion(currentVersion);
     }
-    // Если версия изменилась или не установлена - ПРИНУДИТЕЛЬНО заменить все предустановленные
+    // Версия изменилась или не установлена — обновить каталог: свежие
+    // предустановленные минус удалённые (журнал stationMods), с правками
+    // пользователя (отредактированные остаются ЕГО версией, а не копией
+    // каталога), плюс все пользовательские станции.
     else if (!savedVersion || savedVersion !== currentVersion) {
-      // Сохранить ВСЕ пользовательские: добавленные вручную и из онлайн-поиска (user-),
-      // импортированные (imported_) и избранные —
-      // единый критерий для всех веток чистки, см. StationCleanup.isUserAdded
+      // Пользовательские: добавленные вручную и из онлайн-поиска (user-),
+      // импортированные (imported_) — единый критерий для всех веток чистки,
+      // см. StationCleanup.isUserAdded. Каталог (defaultIds) сюда не идёт:
+      // он собирается ниже, через mineOrFresh.
       const userStations = state.stations.filter(s =>
         s.id && StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
       );
-      
-      console.log('Сохранение пользовательских станций при обновлении версии:', userStations.length);
-      
-      // Полностью заменить список: сначала проверенные предустановленные из JSON, потом пользовательские
+
+      console.log('Обновление каталога станций, пользовательских сохранено:', userStations.length);
+
       state.stations = [
-        ...defaultStationsList.map(station => ({ ...station })),
+        ...defaultStationsList
+          .filter(s => !removedIds.has(s.id))
+          .map(mineOrFresh),
         ...userStations
       ];
-      
+
       // Сохранить обновленные станции и версию
       await window.AppAPI.saveStations(state.stations);
       await window.AppAPI.saveStationsVersion(currentVersion);
     }
-    // Если версия совпадает, проверить на дубликаты и старые предустановленные станции
+    // Версия совпадает: список трогать по мелочи — только дубликаты. Каталог
+    // НЕ пересобирается: удалённые станции (журнал stationMods) не воскрешают,
+    // отредактированные не откатывают (жалоба 2026-10-11 «списки редактируются
+    // только при работе плеера, после выключения всё возвращается»).
     else {
       // Дубликаты по ID и по URL: при конфликте выигрывает пользовательская
-      // станция (StationCleanup), а не предустановленная. Раньше побеждал
-      // первый встреченный: копия пользователя выбрасывалась, а предустановленное
-      // с тем же URL потом уходило в «старые» — терялись обе.
-      const { stations: uniqueStations, dropped } = StationCleanup.dedupe(state.stations, favoriteIds);
+      // станция, а не предустановленная. Каталог stations.js передаётся в
+      // defaultIds отдельно: его id тоже начинаются с user-/imported_.
+      const { stations: uniqueStations, dropped } = StationCleanup.dedupe(state.stations, favoriteIds, defaultIds);
 
       if (dropped > 0) {
         console.log(`Удалено дубликатов: ${dropped}`);
         state.stations = uniqueStations;
         await window.AppAPI.saveStations(state.stations);
-      }
-      
-      // Проверить, есть ли старые предустановленные станции, которых нет в новом списке
-      // Пользовательские (user-/imported_) и избранные не трогаем — StationCleanup
-      const oldDefaultStations = state.stations.filter(s =>
-        s.id && !StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
-      );
-      
-      // Проверить, все ли предустановленные станции присутствуют
-      const existingDefaultIds = new Set(state.stations.filter(s => defaultIds.has(s.id)).map(s => s.id));
-      const missingDefaults = defaultStationsList.filter(s => !existingDefaultIds.has(s.id));
-      
-      if (oldDefaultStations.length > 0 || missingDefaults.length > 0) {
-        // Оставить только проверенные предустановленные и пользовательские
-        // — критерий см. StationCleanup
-        const userStations = state.stations.filter(s =>
-          s.id && StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)
-        );
-        
-        console.log('Сохранение пользовательских станций при очистке старых предустановленных:', userStations.length);
-        
-        state.stations = [
-          ...defaultStationsList.map(station => ({ ...station })),
-          ...userStations
-        ];
-        
-        await window.AppAPI.saveStations(state.stations);
-        await window.AppAPI.saveStationsVersion(currentVersion);
       }
     }
 
@@ -2191,6 +2186,7 @@ async function checkAllStations() {
 
 let availableUpdate = null;
 let checkingUpdate = false;
+let installingUpdate = false;  // идёт закачка установщика (второй клик глушим)
 async function checkForUpdates() {
   const status = document.getElementById('updateStatus');
   const install = document.getElementById('installUpdateBtn');
@@ -2245,11 +2241,67 @@ async function checkForUpdates() {
   install.style.display = 'inline-block';
 }
 
+// Прогресс скачивания установщика (жалоба 2026-10-11: после «Обновить»
+// минутами «ничего не происходит», пока качается 350-мегабайтный файл):
+// хост шлёт push-событие updateProgress, страница рисует полосу и проценты.
+function renderUpdateProgress(detail) {
+  const wrap = document.getElementById('updateProgress');
+  const fill = document.getElementById('updateProgressBar');
+  const label = document.getElementById('updateProgressLabel');
+  const status = document.getElementById('updateStatus');
+  if (!wrap || !fill) return;
+  wrap.hidden = false;
+  const percent = Number.isFinite(detail?.percent) && detail.percent >= 0 ? detail.percent : -1;
+  const known = percent >= 0;
+  // Content-Length не пришёл (редирект без длины) — полоса неопределённая.
+  fill.classList.toggle('indeterminate', !known);
+  if (known) fill.style.width = `${Math.min(100, percent)}%`;
+  if (label) {
+    label.textContent = known ? `${percent}%` : '';
+    // Размеры — только в подсказке: единицы «MB» не переводятся.
+    const receivedMb = (detail?.received ?? 0) / 1048576;
+    const totalMb = (detail?.total ?? 0) / 1048576;
+    label.title = totalMb > 0 ? `${receivedMb.toFixed(1)} / ${totalMb.toFixed(1)} MB` : `${receivedMb.toFixed(1)} MB`;
+  }
+  if (status && known) status.textContent = t('Скачивание установщика…') + ` ${percent}%`;
+}
+
+function hideUpdateProgress() {
+  const wrap = document.getElementById('updateProgress');
+  const fill = document.getElementById('updateProgressBar');
+  const label = document.getElementById('updateProgressLabel');
+  if (wrap) wrap.hidden = true;
+  if (fill) { fill.style.width = ''; fill.classList.remove('indeterminate'); }
+  if (label) { label.textContent = ''; label.title = ''; }
+}
+
 async function installAvailableUpdate() {
-  if (!availableUpdate?.url || !confirm(t('Скачать и установить версию {version}?', { version: availableUpdate.version }))) return;
-  document.getElementById('updateStatus').textContent = t('Скачивание установщика…');
+  const status = document.getElementById('updateStatus');
+  const button = document.getElementById('installUpdateBtn');
+  // Повторный клик во время уже идущей закачки заводил второй закаччик и
+  // второй установщик — двойной запуск тоже выглядел как «не срабатывает».
+  if (!availableUpdate?.url || installingUpdate) return;
+  if (!confirm(t('Скачать и установить версию {version}?', { version: availableUpdate.version }))) return;
+  installingUpdate = true;
+  if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+  if (status) status.textContent = t('Скачивание установщика…');
+  // До первого события хоста — неопределённая полоса, чтобы движение было
+  // видно сразу после клика, а не после первых мегабайт.
+  renderUpdateProgress({ percent: -1, received: 0, total: 0 });
   const result = await window.AppAPI.installUpdate(availableUpdate.url);
-  if (!result?.success) document.getElementById('updateStatus').textContent = t('Не удалось запустить обновление.');
+  hideUpdateProgress();
+  installingUpdate = false;
+  if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+  // Успех заканчивается запуском установщика и выходом приложения — статус
+  // в этом случае увидеть уже некому, поэтому только путь ошибки.
+  if (!result?.success && status) status.textContent = t('Не удалось запустить обновление.');
+}
+
+function handleUpdateProgress(detail) {
+  // Событие от уже законченной (или упавшей) попытки не должно рисовать
+  // полосу заново.
+  if (!installingUpdate) return;
+  renderUpdateProgress(detail);
 }
 
 async function searchOnlineStations() {
@@ -3397,8 +3449,12 @@ async function updateStation(stationId) {
   // Сохранить изменения
   try {
     await saveData();
-    // Станции сохранены
-    
+    // Отредактированная предустановленная — в журнал stationMods: при обновлении
+    // каталога (новая версия stations.js) её версия не заменится копией из
+    // каталога — правка останется.
+    await markCatalogMod(stationId, 'edited').catch(err =>
+      console.error('Не удалось записать пометку правки:', err));
+
     messageEl.textContent = t('Станция успешно обновлена и сохранена!');
     messageEl.className = 'message success';
     
@@ -3418,6 +3474,20 @@ async function updateStation(stationId) {
     messageEl.textContent = t('Ошибка при сохранении станции: {error}', { error: error.message });
     messageEl.className = 'message error';
   }
+}
+
+// Пометить станцию каталога stations.js как удалённую/отредактированную
+// (хранилище-ключ stationMods: { id: 'removed' | 'edited' }). Журнал ведётся
+// только для id из каталога: пользовательские станции и так переживают
+// перезапуск, а воскресить их нечему. См. loadData: removedIds/mineOrFresh.
+async function markCatalogMod(stationId, mark) {
+  if (!stationId) return;
+  const catalog = window.getDefaultStations ? window.getDefaultStations() : [];
+  if (!catalog.some(s => s.id === stationId)) return;
+  const mods = (await window.AppAPI.getStationMods()) || {};
+  if (mods[stationId] === mark) return;
+  mods[stationId] = mark;
+  await window.AppAPI.saveStationMods(mods);
 }
 
 // Удаление станции
@@ -3452,8 +3522,11 @@ async function deleteStation(stationId) {
   // Сохранить изменения
   try {
     await saveData();
-    // Станция удалена
-    
+    // Удалённая предустановленная — в журнал stationMods: без пометки 'removed'
+    // следующий перезапуск вернёт её из каталога (жалоба 2026-10-11).
+    await markCatalogMod(stationId, 'removed').catch(err =>
+      console.error('Не удалось записать пометку удаления:', err));
+
     // Обновить список станций
     loadStations();
   } catch (error) {
@@ -3591,13 +3664,17 @@ function setupIPCListeners() {
   // nativeError — поток умер посреди игры: страница гасит воспроизведение
   // и сообщает пользователю, иначе кнопка Play бездействует на мёртвом медиа.
   register('onNativeError', handleNativeError);
+
+  // updateProgress — проценты скачивания установщика обновления: полоса
+  // прогресса в Настройки → Система вместо «ничего не происходит» минутами.
+  register('onUpdateProgress', handleUpdateProgress);
   
   register('onStopAllAudio', () => {
     stopAllAudio();
   });
   
   register('onShowAbout', () => {
-    showToast(t('CatLu Radio NET v3.5.8\n\nПриложение для прослушивания интернет-радио.'), 'info');
+    showToast(t('CatLu Radio NET v3.5.9\n\nПриложение для прослушивания интернет-радио.'), 'info');
   });
   
   // При выгрузке страницы помечаем закрытие: stopPlay() в этом случае не

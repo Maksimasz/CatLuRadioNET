@@ -1,6 +1,11 @@
 // Чистка списка станций при старте — чистые функции, чтобы их можно было
 // проверить в tests/stations-persistence.test.js.
 //
+// ВАЖНО: id предустановленных станций из stations.js тоже начинаются с
+// user-/imported_ — каталог экспортирован из пользовательского списка. Поэтому
+// «предустановленная» определяется не префиксом, а принадлежностью к каталогу
+// (id входит в defaultIds): именно по этому признаку идут приоритеты ниже.
+//
 // Два правила, из-за нарушения которых сохранённые станции пропадали
 // после перезапуска:
 // 1) «Пользовательская» — всё, что добавил владелец: ручное добавление
@@ -25,9 +30,19 @@ const StationCleanup = (function () {
     return !!(favoriteIds && typeof favoriteIds.has === 'function' && favoriteIds.has(id));
   }
 
+  // Предустановленная — станция каталога stations.js. Префикс user-/imported_
+  // здесь не показатель (см. ВАЖНО выше), поэтому каталог передаётся
+  // отдельным набором defaultIds.
+  function isPreset(station, favoriteIds, defaultIds) {
+    if (defaultIds instanceof Set && defaultIds.has(station && station.id)) return true;
+    return !isUserAdded(station, favoriteIds);
+  }
+
   // Дедупликация по id и по URL с приоритетом пользовательских станций.
+  // defaultIds — id каталога stations.js (без него каталог считается
+  // пользовательским из-за префиксов и выигрывает у настоящих новых станций).
   // Порядок списка сохраняется; dropped — сколько дубликатов отброшено.
-  function dedupe(stations, favoriteIds) {
+  function dedupe(stations, favoriteIds, defaultIds) {
     const dropped = new Set();
     const byId = new Map();
     const byUrl = new Map();
@@ -54,9 +69,10 @@ const StationCleanup = (function () {
       }
 
       // Пользовательская выигрывает, только если все, с кем она конфликтует,
-      // — предустановленные. Между собой пользовательские побеждает первый.
-      const wins = isUserAdded(station, favoriteIds)
-        && holders.every(holder => !isUserAdded(holder, favoriteIds));
+      // — предустановленные (каталог stations.js или вовсе без префикса).
+      // Между собой пользовательские побеждает первый.
+      const wins = !isPreset(station, favoriteIds, defaultIds)
+        && holders.every(holder => isPreset(holder, favoriteIds, defaultIds));
       if (wins) {
         holders.forEach(drop);
         if (id) byId.set(id, station);
@@ -72,7 +88,7 @@ const StationCleanup = (function () {
     };
   }
 
-  return { USER_ID_PREFIXES, isUserAdded, dedupe };
+  return { USER_ID_PREFIXES, isUserAdded, isPreset, dedupe };
 })();
 
 // Классический скрипт: браузеру — глобальный модуль, Node — на экспорт

@@ -10,7 +10,7 @@
     console.log('Время:', new Date().toLocaleTimeString());
   </script>
   <!-- WebView2 API -->
-  <script src="js/api-adapter.js?v=3.5.8"></script>
+  <script src="js/api-adapter.js?v=3.5.9"></script>
   <!-- HLS.js для поддержки HLS потоков (m3u8) -->
   <script src="js/hls.min.js"></script>
 </head>
@@ -381,6 +381,10 @@
               <p id="updateStatus" class="settings-description">Проверка обновлений при запуске.</p>
               <button id="checkUpdateBtn" class="btn btn-secondary">Проверить обновления</button>
               <button id="installUpdateBtn" class="btn btn-primary" style="display: none;"></button>
+              <div id="updateProgress" class="update-progress" hidden>
+                <div class="update-progress-track"><div id="updateProgressBar" class="update-progress-fill"></div></div>
+                <span id="updateProgressLabel" class="update-progress-label"></span>
+              </div>
             </div>
             <div class="settings-section" style="margin-top: 20px;">
               <h3>Выход из приложения</h3>
@@ -527,9 +531,9 @@
   <div id="toastRoot" class="toast-root" aria-live="polite"></div>
 
   <!-- Чистка списка станций при старте: отдельный модуль, чтобы тесты могли его проверять -->
-  <script src="js/station-cleanup.js?v=3.5.8"></script>
+  <script src="js/station-cleanup.js?v=3.5.9"></script>
   <!-- Основной скрипт -->
-  <script src="js/renderer.js?v=3.5.8"></script>
+  <script src="js/renderer.js?v=3.5.9"></script>
   <!-- Вкладки внутри настроек: панели вместо аккордеонов -->
   <script>
     // Показать выбранную панель настроек, скрыв остальные

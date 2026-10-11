@@ -223,7 +223,7 @@ const TranslationManager = {
       'Станция успешно обновлена и сохранена!': 'Station updated and saved successfully!',
       'Вы уверены, что хотите удалить эту станцию?': 'Are you sure you want to delete this station?',
       'Ошибка при удалении станции: {error}': 'Error deleting station: {error}',
-      'CatLu Radio NET v3.5.8\n\nПриложение для прослушивания интернет-радио.': 'CatLu Radio NET v3.5.8\n\nInternet radio player.',
+      'CatLu Radio NET v3.5.9\n\nПриложение для прослушивания интернет-радио.': 'CatLu Radio NET v3.5.9\n\nInternet radio player.',
 
       // ——— Проверка станций и обновления ———
       'Проверка…': 'Checking…',
@@ -467,6 +467,9 @@ const TranslationManager = {
       'Установлена последняя версия.': 'Įdiegta naujausia versija.',
       'Доступна версия {version}.': 'Yra versija {version}.',
       'Обновить до {version}': 'Atnaujinti į {version}',
+      'Скачать и установить версию {version}?': 'Atsisiųsti ir įdiegti versiją {version}?',
+      'Скачивание установщика…': 'Atsisiunčiamas diegimo failas…',
+      'Не удалось запустить обновление.': 'Nepavyko paleisti atnaujinimo.',
       'Станция не найдена': 'Stotis nerasta',
       'Ошибка: неверный URL': 'Klaida: neteisingas URL',
       'Ошибка при сохранении станции: {error}': 'Klaida išsaugojant stotį: {error}',
@@ -651,6 +654,9 @@ const TranslationManager = {
       'Установлена последняя версия.': 'מותקנת הגרסה האחרונה.',
       'Доступна версия {version}.': 'זמינה גרסה {version}.',
       'Обновить до {version}': 'עדכן ל-{version}',
+      'Скачать и установить версию {version}?': 'להוריד ולהתקין את הגרסה {version}?',
+      'Скачивание установщика…': 'מוריד את קובץ ההתקנה…',
+      'Не удалось запустить обновление.': 'לא ניתן להפעיל את העדכון.',
       'Станция не найдена': 'התחנה לא נמצאה',
       'Ошибка: неверный URL': 'שגיאה: כתובת שגויה',
       'Ошибка при сохранении станции: {error}': 'שגיאה בשמירת התחנה: {error}',

@@ -27,6 +27,9 @@ namespace CatLuRadio
         private readonly SemaphoreSlim storeLock = new(1, 1);
         private long storeSaveSeq;   // последний выданный номер сохранения
         private long storeSavedSeq;  // последний реально записанный на диск
+        // Идёт закачка установщика обновления: защита от второго клика
+        // (второй параллельный закаччик = два установщика и «не срабатывает»).
+        private volatile bool updateDownloading;
 
         // ВАЖНО: имя хранилища намеренно отличается от store.json.
         // Старая версия приложения использует тот же каталог
@@ -438,19 +441,75 @@ namespace CatLuRadio
                 SendCallback(callbackId, new { success = true, hasUpdate, version = tag, url });
             } catch (Exception ex) { SendCallback(callbackId, new { success = false, error = ex.Message }); }
         }
+        // Скачивание установщика — большой файл (350+ МБ), на слабой линии
+        // минуты. Раньше здесь был один GetStreamAsync без обратной связи:
+        // после клика «Обновить» экран молчал минуты-две — «ничего не
+        // происходит» (жалоба 2026-10-11). Теперь копируем поток вручную
+        // и шлём push-событие updateProgress с процентами для полосы прогресса.
         private async Task InstallUpdate(string url, string callbackId) {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !url.StartsWith(UpdateAssetPrefix, StringComparison.OrdinalIgnoreCase)) {
                 SendCallback(callbackId, new { success = false, error = "Некорректная ссылка обновления" });
                 return;
             }
+            if (updateDownloading) {
+                SendCallback(callbackId, new { success = false, error = "Установщик уже скачивается" });
+                return;
+            }
+            // Отдельный клиент: шаринговый (15 с) таймаутится на медленных
+            // заголовках, а здесь ждать можно долго.
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            var installerPath = Path.Combine(Path.GetTempPath(), $"CatLuRadio-update-{Guid.NewGuid():N}.exe");
             try {
-                var installerPath = Path.Combine(Path.GetTempPath(), $"CatLuRadio-update-{Guid.NewGuid():N}.exe");
-                await using (var source = await httpClient.GetStreamAsync(uri))
-                await using (var target = File.Create(installerPath)) await source.CopyToAsync(target);
+                updateDownloading = true;
+                // ResponseHeadersRead: тело читаем сами, чтобы считать байты.
+                using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+                var total = response.Content.Headers.ContentLength ?? -1;
+                await using (var source = await response.Content.ReadAsStreamAsync())
+                await using (var target = File.Create(installerPath)) {
+                    var buffer = new byte[81920];
+                    long received = 0;
+                    var lastSent = DateTime.MinValue;
+                    int read;
+                    while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0) {
+                        await target.WriteAsync(buffer.AsMemory(0, read));
+                        received += read;
+                        // Дроссель ~4 сообщения/с: без него WebView2 получал
+                        // бы событие на каждый буфер (тычи за закачку).
+                        var now = DateTime.UtcNow;
+                        if ((now - lastSent).TotalMilliseconds >= 250) {
+                            lastSent = now;
+                            SendUpdateProgress(total > 0 ? (int)(received * 100 / total) : -1, received, total);
+                        }
+                    }
+                    SendUpdateProgress(total > 0 ? 100 : -1, received, total > 0 ? total : received);
+                }
+                AppLog.Info($"Обновление скачано: {installerPath}");
                 Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
                 SendCallback(callbackId, new { success = true });
                 BeginInvoke(Close);
-            } catch (Exception ex) { SendCallback(callbackId, new { success = false, error = ex.Message }); }
+            } catch (Exception ex) {
+                AppLog.Error("Обновление: не удалось скачать установщик", ex);
+                // Частично скачанный .exe в Temp — мусор, убираем.
+                try { if (File.Exists(installerPath)) File.Delete(installerPath); } catch { /* Недокачанный файл уберёт чистка Temp. */ }
+                updateDownloading = false;
+                SendCallback(callbackId, new { success = false, error = ex.Message });
+            }
+        }
+
+        // Проценты скачивания обновления — в страницу: полоса прогресса идёт
+        // на глазах, вместо «ничего не происходит» минуты.
+        private void SendUpdateProgress(int percent, long received, long total) {
+            try {
+                // Поток копирования — фоновый: PostWebMessage на UI-поток,
+                // как и в OnNativeError.
+                if (InvokeRequired) { BeginInvoke(() => SendUpdateProgress(percent, received, total)); return; }
+                if (!IsHandleCreated || webView?.CoreWebView2 is null) return;
+                webView.CoreWebView2.PostWebMessageAsString(
+                    JsonConvert.SerializeObject(new { @event = "updateProgress", percent, received, total }));
+            } catch (Exception ex) {
+                AppLog.Error("updateProgress: не удалось отправить событие", ex);
+            }
         }
         private async Task CheckStream(string url, string callbackId) {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https")) {

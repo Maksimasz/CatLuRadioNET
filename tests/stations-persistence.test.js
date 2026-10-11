@@ -1,11 +1,20 @@
 // Сохранённые станции обязаны переживать перезапуск.
 //
-// Пойманный баг: хранилище затиралось предустановленными при каждом старте
-// (loadStations писал в файл ДО того, как loadData успевал прочитать список),
-// а чистка выкидывала всё, что не совпадает с id из stations.js — в частности,
-// станции, добавленные вручную (user-) и импорт (imported_). Симптом: добавил
-// станцию — она есть до выключения, при следующем запуске пропала, хотя
-// избранное и история остались.
+// Пойманные баги:
+// 1) Хранилище затиралось предустановленными при каждом старте (loadStations
+//    писал в файл ДО того, как loadData успевал прочитать список), а чистка
+//    выкидывала всё, что не совпадает с id из stations.js — в частности,
+//    станции, добавленные вручную (user-) и импорт (imported_). Симптом:
+//    добавил станцию — она есть до выключения, при следующем запуске пропала.
+// 2) Жалоба 2026-10-11: «станции редактируются только при работе плеера,
+//    после выключения всё возвращается» — как с предустановленными, так и с
+//    новыми. Причина: id каталога stations.js тоже начинаются с user-/imported_
+//    (экспорт из пользовательского списка), а loadData при каждом старте
+//    воскрешал «недостающие предустановленные» и пересобирал список из свежего
+//    каталога — вместе с удалёнными возвращалась исходная версия отредактированных,
+//    а дедупликация без каталога побеждала новую станцию каталожной копией
+//    того же URL. Лечение: журнал правок stationMods ('removed'/'edited')
+//    плюс defaultIds в StationCleanup.dedupe.
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert');
@@ -71,6 +80,38 @@ assert.ok(
   );
 }
 
+// Каталог stations.js имеет префиксы user-/imported_ в id (экспорт из
+// пользовательского списка) — поэтому дедупликация получает defaultIds.
+// Без них каталожная копия считалась пользовательской, стояла в списке
+// первой и побеждала настоящую новую станцию с тем же URL: после
+// перезапуска «моя» станция схлопывалась в каталожную.
+{
+  const catalog = { id: 'imported_1_1', url: 'https://stream.example/x' };
+  const mine = { id: 'user-2', url: 'https://stream.example/x' };
+  const result = StationCleanup.dedupe([catalog, mine], new Set(), new Set(['imported_1_1']));
+  assert.deepStrictEqual(
+    result.stations.map(s => s.id),
+    ['user-2'],
+    'новая станция обязана побеждать каталожную копию с тем же URL (каталог — предустановленный)'
+  );
+  assert.ok(
+    StationCleanup.isPreset(catalog, new Set(), new Set(['imported_1_1'])),
+    'станция каталога должна считаться предустановленной, несмотря на префикс imported_ в id'
+  );
+  assert.ok(
+    !StationCleanup.isPreset(mine, new Set(), new Set(['imported_1_1'])),
+    'станция вне каталога с префиксом user- — не предустановленная'
+  );
+}
+
+// Между собой две станции каталога побеждает первая — как и прежде
+{
+  const a = { id: 'imported_1', url: 'u' };
+  const b = { id: 'imported_2', url: 'u' };
+  const result = StationCleanup.dedupe([a, b], new Set(), new Set(['imported_1', 'imported_2']));
+  assert.deepStrictEqual(result.stations.map(s => s.id), ['imported_1']);
+}
+
 // ——— Страница (renderer) ———
 const renderer = read('wwwroot', 'js', 'renderer.js');
 
@@ -83,20 +124,47 @@ assert.ok(
   'loadStations не должна писать в хранилище — затрёт сохранённые станции до loadData'
 );
 
-// 2) Чистка в loadData идёт через StationCleanup во всех трёх фильтрах
+// 2) Чистка в loadData идёт через StationCleanup; дедупликация получает
+//    каталог (defaultIds): id предустановленных тоже начинаются с user-/imported_
 assert.ok(
-  renderer.includes('StationCleanup.dedupe('),
-  'loadData не использует StationCleanup.dedupe — дубликаты снова выберут проигравшего'
+  renderer.includes('StationCleanup.dedupe(state.stations, favoriteIds, defaultIds)'),
+  'loadData не использует StationCleanup.dedupe с каталогом — дубликаты снова выберут проигравшего'
 );
 const keepFilter = 'StationCleanup.isUserAdded(s, favoriteIds) && !defaultIds.has(s.id)';
 assert.ok(
-  renderer.split(keepFilter).length - 1 >= 2,
-  'фильтры сохранения пользовательских станций должны использовать StationCleanup'
+  renderer.split(keepFilter).length - 1 >= 1,
+  'фильтр сохранения пользовательских станций должен использовать StationCleanup'
 );
-assert.ok(
-  renderer.includes('!StationCleanup.isUserAdded(s, favoriteIds)'),
-  'фильтр старых предустановленных должен исключать пользовательские'
-);
+
+// 2б) Журнал правок каталога (жалоба 2026-10-11 «списки редактируются только
+//     при работе плеера, после выключения всё возвращается»): удалённые не
+//     воскресают, отредактированные не откатываются при пересборке каталога.
+assert.ok(!renderer.includes('missingDefaults'),
+  'В loadData осталась пересборка по «недостающим предустановленным» — удалённые станции снова вернутся после перезапуска');
+assert.ok(!renderer.includes('oldDefaultStations'),
+  'В loadData осталась пересборка по «старым предустановленным» — она пересобирала каталог и откатывала правки');
+for (const [marker, what] of [
+  ['getStationMods', 'чтения журнала правок'],
+  ['removedIds', 'набора удалённых'],
+  ['mineOrFresh', 'ветки сохранения отредактированных']
+]) {
+  assert.ok(renderer.includes(marker), `В loadData нет ${what} (stationMods)`);
+}
+
+// 2в) Правки фиксируются в журнале: удаление — 'removed', редактирование —
+//     'edited'; ведётся только для id каталога stations.js.
+assert.match(renderer, /markCatalogMod\(stationId, 'removed'\)/,
+  'deleteStation не помечает удалённую предустановленную — она вернётся при следующем старте');
+assert.match(renderer, /markCatalogMod\(stationId, 'edited'\)/,
+  'updateStation не помечает отредактированную предустановленную — правка слетит при пересборке каталога');
+assert.ok(renderer.includes('if (!catalog.some(s => s.id === stationId)) return;'),
+  'markCatalogMod должен помечать только станции каталога stations.js');
+{
+  const adapter = read('wwwroot', 'js', 'api-adapter.js');
+  for (const key of ['getStationMods', 'saveStationMods']) {
+    assert.ok(adapter.includes(`${key}:`), `В api-adapter нет моста ${key} для журнала stationMods`);
+  }
+}
 
 // 3) YouTube из приложения убран: легаси-плейлисты yt- вычищаются при старте
 //    из всех трёх списков разом (станции, избранное, история) и перестают
