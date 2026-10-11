@@ -264,6 +264,15 @@ body {
   white-space: nowrap;
 }
 
+/* Значок проекта (кот) в заголовке — вместо прежнего эмодзи-радио */
+.header-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  margin-right: 8px;
+  vertical-align: -5px;
+}
+
 .controls {
   display: flex;
   align-items: center;
@@ -657,6 +666,18 @@ body.settings-open .tab-btn-icon .close-icon {
   display: block;
 }
 
+/* Компактнее: в режиме настроек строка вкладок несёт только крестик —
+   полновысотная полоса (45px) + паддинги контента + стандартный маржин
+   браузера у h2 (~20px) копили ~35px зазора между плеером и «Настройки». */
+body.settings-open .tab-btn {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+body.settings-open .tab-content {
+  padding-top: 4px;
+}
+
 .tab-content {
   display: none;
   flex: 1;
@@ -950,6 +971,7 @@ body.settings-open .tab-btn-icon .close-icon {
 
 .add-station-form h2,
 .settings-form h2 {
+  margin-top: 0; /* маржин браузера по умолчанию (~20px) — лишний зазор сверху */
   margin-bottom: 12px;
   color: var(--md-on-surface);
   font-size: 24px;
