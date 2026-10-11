@@ -10,7 +10,7 @@
     console.log('Время:', new Date().toLocaleTimeString());
   </script>
   <!-- WebView2 API -->
-  <script src="js/api-adapter.js?v=3.5.9"></script>
+  <script src="js/api-adapter.js?v=3.5.10"></script>
   <!-- HLS.js для поддержки HLS потоков (m3u8) -->
   <script src="js/hls.min.js"></script>
 </head>
@@ -473,7 +473,7 @@
       <div class="mini-player-info">
         <div class="mini-player-brand">
           <video class="mini-player-logo" src="assets/logo-anim.mp4" poster="assets/logo.jpg" autoplay muted loop playsinline aria-hidden="true"></video>
-          <span class="mini-player-title">CatLu Radio NET <span id="miniPlayerVersion">v3.5.9</span></span>
+          <span class="mini-player-title">CatLu Radio NET <span id="miniPlayerVersion">v3.5.10</span></span>
         </div>
         <div class="mini-player-station" id="miniPlayerStation">—</div>
         <div class="mini-player-time" id="miniPlayerClock">00:00:00</div>
@@ -535,9 +535,9 @@
   <div id="toastRoot" class="toast-root" aria-live="polite"></div>
 
   <!-- Чистка списка станций при старте: отдельный модуль, чтобы тесты могли его проверять -->
-  <script src="js/station-cleanup.js?v=3.5.9"></script>
+  <script src="js/station-cleanup.js?v=3.5.10"></script>
   <!-- Основной скрипт -->
-  <script src="js/renderer.js?v=3.5.9"></script>
+  <script src="js/renderer.js?v=3.5.10"></script>
   <!-- Вкладки внутри настроек: панели вместо аккордеонов -->
   <script>
     // Показать выбранную панель настроек, скрыв остальные

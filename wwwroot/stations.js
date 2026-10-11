@@ -4,7 +4,7 @@
 
 // Версия предустановленных станций (увеличивать при обновлении списка)
 // Изменение версии принудительно обновит все предустановленные станции
-const DEFAULT_STATIONS_VERSION = '1.0.3';
+const DEFAULT_STATIONS_VERSION = '1.0.4';
 
 // Встроенные данные из CatLu-radio-stations.json
 const STATIONS_JSON_DATA = {
@@ -48,19 +48,19 @@ const STATIONS_JSON_DATA = {
     "user-1763548947542": {
       "name": "user-1763548947542",
       "title": "Авторадио",
-      "url": "https://srv01.gpmradio.ru/stream/air/aac/64/100?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJrZXkiOiJiNGZiZTI0YTM0MzI5MzBlMTVkMzE0MmNjZWFkNDU2OCIsIklQIjoiODEuMTk5LjEzNS4xNzAiLCJVQSI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xNDAuMC4wLjAgWWFCcm93c2VyLzI1LjEwLjAuMCBTYWZhcmkvNTM3LjM2IiwiUmVmIjoiaHR0cHM6Ly8xMDEucnUvIiwidWlkX2NoYW5uZWwiOiIxMDAiLCJ0eXBlX2NoYW5uZWwiOiJjaGFubmVsIiwidHlwZURldmljZSI6IlBDIiwiQnJvd3NlciI6IkNocm9tZSIsIkJyb3dzZXJWZXJzaW9uIjoiMTQwLjAuMC4wIiwiU3lzdGVtIjoiV2luZG93cyAxMCIsImV4cCI6MTc2MzU5MjAzMH0.YBqaR818D6lY6AFd_g2nfoo3gwMloWx5_raE0vMOiYk",
+      "url": "https://gpm.hostingradio.ru/gpm-avtoradio495.aacp",
       "image": "",
       "streams": {
-        "0": "https://srv01.gpmradio.ru/stream/air/aac/64/100?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJrZXkiOiJiNGZiZTI0YTM0MzI5MzBlMTVkMzE0MmNjZWFkNDU2OCIsIklQIjoiODEuMTk5LjEzNS4xNzAiLCJVQSI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xNDAuMC4wLjAgWWFCcm93c2VyLzI1LjEwLjAuMCBTYWZhcmkvNTM3LjM2IiwiUmVmIjoiaHR0cHM6Ly8xMDEucnUvIiwidWlkX2NoYW5uZWwiOiIxMDAiLCJ0eXBlX2NoYW5uZWwiOiJjaGFubmVsIiwidHlwZURldmljZSI6IlBDIiwiQnJvd3NlciI6IkNocm9tZSIsIkJyb3dzZXJWZXJzaW9uIjoiMTQwLjAuMC4wIiwiU3lzdGVtIjoiV2luZG93cyAxMCIsImV4cCI6MTc2MzU5MjAzMH0.YBqaR818D6lY6AFd_g2nfoo3gwMloWx5_raE0vMOiYk"
+        "0": "https://gpm.hostingradio.ru/gpm-avtoradio495.aacp"
       }
     },
     "user-1764912254171": {
       "name": "user-1764912254171",
       "title": "Радио Хит",
-      "url": "https://hit.trkeurasia.ru/hit128?st=c231d319-0d68-5fb5-af07-51de6ad48f9f&gts=1764913482",
+      "url": "https://hit.trkeurasia.ru/hit128",
       "image": "",
       "streams": {
-        "0": "https://hit.trkeurasia.ru/hit128?st=c231d319-0d68-5fb5-af07-51de6ad48f9f&gts=1764913482"
+        "0": "https://hit.trkeurasia.ru/hit128"
       }
     },
     "imported_russian-radio_1764914971959": {
@@ -102,28 +102,28 @@ const STATIONS_JSON_DATA = {
     "user-1764916596687": {
       "name": "user-1764916596687",
       "title": "Русская волна",
-      "url": "https://irp.volna.top/ruwave?st=db0fbf33-bad1-5d34-90ab-22531995a7a0&gts=1764916552",
+      "url": "https://irp.volna.top/ruwave",
       "image": "",
       "streams": {
-        "0": "https://irp.volna.top/ruwave?st=db0fbf33-bad1-5d34-90ab-22531995a7a0&gts=1764916552"
+        "0": "https://irp.volna.top/ruwave"
       }
     },
     "user-1764917040802": {
       "name": "user-1764917040802",
       "title": "DFM радио",
-      "url": "https://dfm.hostingradio.ru/dfm96.aacp?st=52b9397c-eb1b-5ace-b29d-d4437dd3deaf&gts=1764916999",
+      "url": "https://dfm.hostingradio.ru/dfm96.aacp",
       "image": "",
       "streams": {
-        "0": "https://dfm.hostingradio.ru/dfm96.aacp?st=52b9397c-eb1b-5ace-b29d-d4437dd3deaf&gts=1764916999"
+        "0": "https://dfm.hostingradio.ru/dfm96.aacp"
       }
     },
     "user-1764917161637": {
       "name": "user-1764917161637",
       "title": "Remix FM",
-      "url": "https://irp2.volna.top/remixfm?st=77b037a7-431c-5952-81f5-82438a958e13&gts=1764917131",
+      "url": "https://irp2.volna.top/remixfm",
       "image": "",
       "streams": {
-        "0": "https://irp2.volna.top/remixfm?st=77b037a7-431c-5952-81f5-82438a958e13&gts=1764917131"
+        "0": "https://irp2.volna.top/remixfm"
       }
     },
     "imported_user-1765350793448_1765356081205": {
