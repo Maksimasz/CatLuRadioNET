@@ -264,14 +264,16 @@ body {
   white-space: nowrap;
 }
 
-/* Значок проекта (кот в наушниках, логотип CatLuRadioNet) в заголовке —
-   вместо прежнего эмодзи-радио */
+/* Значок проекта (кот в наушниках) в заголовке — вместо прежнего эмодзи-радио.
+   Сейчас это зацикленная анимация (mp4 без звука, muted+autoplay+loop);
+   poster — та же обложка статичного логотипа, если видео не стартовало. */
 .header-logo {
   width: 24px;
   height: 24px;
   border-radius: 5px;
   margin-right: 8px;
   vertical-align: -6px;
+  object-fit: cover;
 }
 
 .controls {
