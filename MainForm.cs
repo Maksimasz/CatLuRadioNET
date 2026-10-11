@@ -96,7 +96,11 @@ namespace CatLuRadio
             {
                 this.SuspendLayout();
                 webView = new WebView2 { Dock = DockStyle.Fill };
-                this.ClientSize = new Size(688, 688);
+                // Основное окно: 630×780 (просьба 2026-10-11); рабочая область
+                // экрана — потолок, чтобы на низких мониторах окно не уезжало
+                // за край.
+                var startArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 630, 780);
+                this.ClientSize = new Size(Math.Min(630, startArea.Width), Math.Min(780, startArea.Height));
                 this.MinimumSize = new Size(500, 500);
                 this.Text = $"CatLu Radio NET v{Application.ProductVersion}";
                 this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -413,7 +417,14 @@ namespace CatLuRadio
             FormBorderStyle = enabled ? FormBorderStyle.FixedSingle : FormBorderStyle.Sizable;
             MaximizeBox = !enabled;
             MinimumSize = enabled ? Size.Empty : new Size(500, 500);
-            Size = enabled ? new Size(600, 110) : new Size(688, 688);
+            if (enabled) {
+                Size = new Size(600, 110);
+            } else {
+                // Возврат из мини-плеера — ровно тот же кадр, что и при старте
+                // (ClientSize, а не Size: рамка добавляла бы пару пикселей).
+                var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 630, 780);
+                ClientSize = new Size(Math.Min(630, area.Width), Math.Min(780, area.Height));
+            }
         }
         private void SendCallback(string callbackId, object result) {
             if (InvokeRequired) { Invoke(() => SendCallback(callbackId, result)); return; }
