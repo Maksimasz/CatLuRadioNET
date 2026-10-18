@@ -508,3 +508,25 @@
 - Установщик: `release/CatLuRadio-3.5.10-Standalone-Setup-desktop.exe` (358 007 925 байт, SHA-256 `2E9BA47D0B4AC5B3B8F99AB4BC9357E357BD2A050D19E12C4FC00E7422BF766F`).
 - Push `1991d80..566d36a` + тег `v3.5.10` — через кред Win32 `CredRead` (штатный push не трогали: remote не двигался).
 - Релиз `v3.5.10` опубликован: id **409601065**, https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.10. Текст релиза: `%TEMP%\opencode\release-3.5.10-body.md`.
+
+## Релиз 3.5.11: обновления без ожидания (2026-10-18)
+
+### Новый механизм обновления (просьба пользователя 2026-10-18, 4 пункта)
+
+- **Проверка**: `checkForUpdates()` гоняется при запуске И каждые 24 часа (`setInterval` в init) — сессия может жить сутками, выходящий релиз обязан стать заметен.
+- **Ссылка в шапке** (`8abd4f6`): при `hasUpdate` рядом с «CatLu Radio NET» появляется пилюля-ссылка `#updateLink` с иконкой загрузки и пульсацией (`@keyframes updateLinkPulse`, цвета темы через `color-mix`), подпись «Доступно обновление {version}» (переводы EN `Update {version} available` / LT `Yra atnaujinimas {version}` / HE `עדכון {version} זמין`); авторский `.update-link[hidden]` — иначе UA-правило проигрывает классам. Бейдж «1» на шестерёнке настроек остался.
+- **Клик** → хост `CloseAndUpdate` (MainForm, действие `closeAndUpdate`): валидация по `UpdateAssetPrefix`, запуск скрытого `cmd /c curl -L --fail --retry 3 -o "%TEMP%\CatLuRadio-update-{guid}.exe" "<url>" && start "" "<файл>"` (`CreateNoWindow` — у WinExe не мелькнет консоль), затем `SendCallback(success)` и закрытие окна через 300 мс (PostWebMessage успевает дойти). Окно закрывается СРАЗУ,350+ МБ качает уже отдельный процесс. Защита от повторного клика (`closingForUpdate`), при ошибке хоста — тост и флаг снимается. Прежний `InstallUpdate` с полосой прогресса остаётся для Настройки → Система.
+- Тест `update-badge.test.js` расширен секцией5 (ссылка в h1, 24ч-интервал, показ/скрытие, клик, мост, хост, переводы).
+
+### Попутно в сборку вошло (правки владельца в рабочей папке)
+
+- `station-cleanup.js`: `urlKey()` — сравнение URL дедупликации через `new URL().href` вместо `toLowerCase()` (схема/хост нормализуются, регистр пути и параметров сохраняется); `urlKey` экспортирован из `StationCleanup`.
+- `playback-guard.test.js`: усиленная проверка отмены `playbackRequest`; новый `tests/data-playback-regressions.test.js` (11-й тест).
+
+### Сборка и публикация
+
+- Версия 3.5.11 везде (csproj, `?v=` ×3, `miniPlayerVersion`, .iss, «О программе», README badge + changelog). Тесты 11/11.
+- Установщик: `release/CatLuRadio-3.5.11-Standalone-Setup-desktop.exe` (357 948 657 байт, SHA-256 `7B1992B81FB942494364C7823DEFE4145D0E4E27CCD626026211DF3DEFAD253E`). **Установщик собран Inno Setup 7** — Inno Setup 6 удалён с машины (`%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe`), скрипт `.iss` совместим без правок.
+- Push `e68cf0d..6504843` + тег `v3.5.11` (тег на коммите `6504843`, включающем urlKey — установщик содержит эти правки).
+- Релиз `v3.5.11` опубликован: id **416258801**, https://github.com/Maksimasz/CatLuRadioNET/releases/tag/v3.5.11. Текст релиза: `%TEMP%\opencode\release-3.5.11-body.md`.
+- Не в репозитории (локальные инструменты владельца, untracked): `.claude/`, `.github/copilot-instructions.md`, `.mcp.json`, `.repowise/`, `.vscode/`, `tests/host-persistence-playback.test.ps1`.
