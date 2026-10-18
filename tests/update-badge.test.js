@@ -111,4 +111,53 @@ for (const key of ['Скачать и установить версию {version
   assert.ok(count >= 3, `Ключ «${key}» есть меньше чем в трёх словарях (${count}) — два языка останутся по-русски`);
 }
 
-console.log('Update badge: OK (бейдж в кнопке шестерёнки, скрыт по умолчанию, показ/скрытие по результату проверки; полоса прогресса скачивания с процентами)');
+// ===== 5. Ссылка «Доступно обновление» в шапке (просьба 2026-10-18) =====
+// Точка входа обновления переехала в шапку рядом с названием плеера:
+//  1) ссылка в h1, скрыта по умолчанию, показывается при hasUpdate;
+//  2) проверка не только при запуске, но и каждые 24 часа;
+//  3) клик — закрытие окна и фоновая закачка (мост + хост с скрытой консолью);
+//  4) подпись переводится на все языки.
+assert.match(index, /<h1>[\s\S]*?CatLu Radio NET[\s\S]*?id="updateLink"[^>]*\bhidden\b/,
+  'Ссылки updateLink нет рядом с названием плеера в h1 или она не скрыта по умолчанию');
+assert.match(index, /id="updateLink"[\s\S]{0,400}?id="updateLinkText"/,
+  'В ссылке updateLink нет блока под динамический текст с версией');
+assert.match(renderer, /setInterval\(checkForUpdates, 24 \* 60 \* 60 \* 1000\)/,
+  'Нет периодической проверки обновлений раз в 24 часа');
+assert.match(check, /link\.hidden = false/,
+  'checkForUpdates не показывает ссылку в шапке при найденном обновлении');
+assert.match(check, /link\.hidden = true/,
+  'checkForUpdates не скрывает ссылку, когда обновлений нет');
+assert.match(check, /t\('Доступно обновление \{version\}', \{ version: result\.version \}\)/,
+  'У ссылки нет подписи с доступной версией');
+
+assert.match(css, /\.update-link\[hidden\] \{\s*display: none;/,
+  'Нет авторского .update-link[hidden] — ссылка не скроется через hidden (как у бейджа)');
+assert.match(css, /@keyframes updateLinkPulse/,
+  'У ссылки нет пульсации — «красивая» ссылка не привлекает внимания');
+
+const closeIdx = renderer.indexOf('async function closeAndInstallUpdate()');
+assert.ok(closeIdx >= 0, 'Функции closeAndInstallUpdate нет в renderer');
+const closeFn = renderer.slice(closeIdx);
+assert.match(closeFn, /if \(!availableUpdate\?\.url \|\| closingForUpdate\) return;/,
+  'closeAndInstallUpdate не защищён от повторного клика');
+assert.match(closeFn, /showToast\(t\('Не удалось запустить обновление\.'\)\)/,
+  'При ошибке хоста пользователь не узнает, что закрытие не состоялось');
+assert.match(renderer, /getElementById\('updateLink'\)\?\.addEventListener\('click'[\s\S]{0,200}?closeAndInstallUpdate/,
+  'Ссылка в шапке не подключена к closeAndInstallUpdate');
+
+assert.match(adapter, /closeAndUpdate: \(url\) => sendToNative\('closeAndUpdate', \{ url \}\)/,
+  'api-adapter не пробрасывает closeAndUpdate');
+assert.match(mainform, /case "closeAndUpdate":/,
+  'MainForm не обрабатывает действие closeAndUpdate');
+assert.match(mainform, /CreateNoWindow = true/,
+  'Фоновый загрузчик стартует с видимой консолью — окно cmd мелькнёт при закрытии');
+assert.match(mainform, /curl -L --fail/,
+  'Загрузчик идёт не через curl или без --fail — сбой закачки не отличим от успеха');
+assert.match(mainform, /UpdateAssetPrefix/,
+  'CloseAndUpdate не проверяет ссылку на официальный префикс релизов');
+
+const linkKeyCount = tm.split("'Доступно обновление {version}'").length - 1;
+assert.ok(linkKeyCount >= 3,
+  `Ключ «Доступно обновление {version}» меньше чем в трёх словарях (${linkKeyCount}) — два языка останутся по-русски`);
+
+console.log('Update badge: OK (бейдж в кнопке шестерёнки, скрыт по умолчанию, показ/скрытие по результату проверки; полоса прогресса скачивания с процентами; ссылка «Доступно обновление» в шапке — 24ч-проверка, показ при hasUpdate, клик закрывает окно и запускает фоновый загрузчик)');

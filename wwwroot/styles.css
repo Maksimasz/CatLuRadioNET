@@ -276,6 +276,53 @@ body {
   object-fit: cover;
 }
 
+/* Ссылка «Доступно обновление {version}» рядом с названием плеера (просьба
+   2026-10-18): пилюля с мягкой пульсацией — заметна, но не кричит; кликом
+   закрывает окно и запускает фоновое скачивание обновления. Как и у бейджа,
+   авторский [hidden] обязателен — UA-правило проигрывает классам, и ссылка
+   светилась бы всегда. */
+.update-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: 1px;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--md-primary) 45%, transparent);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  animation: updateLinkPulse 2.2s ease-in-out infinite;
+}
+
+.update-link:hover {
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--md-primary) 65%, transparent);
+  transform: translateY(-1px);
+}
+
+.update-link:active {
+  transform: none;
+}
+
+.update-link[hidden] {
+  display: none;
+}
+
+@keyframes updateLinkPulse {
+  0%, 100% {
+    box-shadow: 0 1px 6px color-mix(in srgb, var(--md-primary) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 1px 14px color-mix(in srgb, var(--md-primary) 75%, transparent);
+  }
+}
+
 .controls {
   display: flex;
   align-items: center;

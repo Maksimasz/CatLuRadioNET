@@ -14,6 +14,7 @@ let state = {
   isClosing: false,
   isStopping: false, // Флаг для отслеживания программной остановки
   isSwitching: false, // Флаг для предотвращения множественных переключений
+  playbackRequest: 0,
   sleepTimer: null, // Таймер сна
   scheduler: null, // Планировщик
   schedulerLastTrigger: {}, // Последние срабатывания планировщика (для избежания повторных запусков)
@@ -217,6 +218,9 @@ async function init() {
   // Первая оценка: не требует ли контент минимальной ширины окна шире заданной
   scheduleWindowMinWidthSync();
   checkForUpdates();
+  // Просьба 2026-10-18: проверка не только при запуске, но и каждые 24 часа —
+  // сессия может жить сутками, и выходящий релиз обязан стать заметен.
+  setInterval(checkForUpdates, 24 * 60 * 60 * 1000);
 
   // Даём WebView2 завершить инициализацию до старта потока.
   setTimeout(() => {
@@ -443,19 +447,20 @@ async function loadData() {
 // Сохранение данных
 async function saveData() {
   try {
-    await window.AppAPI.saveStations(state.stations);
-    await window.AppAPI.saveFavorites(state.favorites);
-    await window.AppAPI.saveHistory(state.history);
+    if (!await window.AppAPI.saveStations(state.stations)) throw new Error('stations');
+    if (!await window.AppAPI.saveFavorites(state.favorites)) throw new Error('favorites');
+    if (!await window.AppAPI.saveHistory(state.history)) throw new Error('history');
     // Сохранить громкость в настройках
     const settingsToSave = {
       ...state.settings,
       volume: state.volume
     };
-    await window.AppAPI.saveSettings(settingsToSave);
+    if (!await window.AppAPI.saveSettings(settingsToSave)) throw new Error('settings');
     return true;
   } catch (error) {
     logError('Error saving data:', error);
-    throw error;
+    showToast(t('Не удалось сохранить изменения. Повторите попытку.'), 'error');
+    return false;
   }
 }
 
@@ -1051,8 +1056,10 @@ async function playStation(station) {
 
   // Установить флаг переключения
   state.isSwitching = true;
+  const request = ++state.playbackRequest;
 
   await window.AppAPI.stopNative();
+  if (request !== state.playbackRequest) return;
   state.nativeAudio = false;
 
   const crossfadeEnabled = state.settings.crossfade && state.settings.crossfade.enabled;
@@ -1152,6 +1159,7 @@ async function playStation(station) {
   if (!useCrossfade) {
     const nativeStartedAt = performance.now();
     const nativeResult = await window.AppAPI.playNative(streamUrl, state.volume);
+    if (request !== state.playbackRequest) return;
     // Тайминг в app.log: консоль WebView2 недоступна, а «долго подключается»
     // без цифр диагностировать нечем.
     window.AppAPI.log?.(`станция «${station.name}»: LibVLC ${Math.round(performance.now() - nativeStartedAt)} мс, громкость ${state.volume}${nativeResult?.success ? '' : ' — неудача, браузерный резерв'}`);
@@ -1161,6 +1169,7 @@ async function playStation(station) {
       try {
         await window.AppAPI.setNativeEqualizer(nativeEqualizerValues());
       } catch (e) { console.warn('Эквалайзер LibVLC не применился:', e); }
+      if (request !== state.playbackRequest) return;
       state.isPlaying = true;
       rememberLastStation(station);
       state.isSwitching = false;
@@ -1341,8 +1350,10 @@ function createStreamErrorHandler({ station, streamUrl, audioElement, contentTyp
     // Поток может быть живым, но WebView2 не принимать старый HTTP/Icecast.
     // После сетевой проверки запускаем его проигрывателем Windows.
     const streamCheck = await window.AppAPI.checkStream(streamUrl);
+    if (state.audio !== audioElement || state.isStopping) return;
     if (streamUrl.startsWith('http://') && streamCheck?.success) {
       const nativeResult = await window.AppAPI.playNative(streamUrl, state.volume);
+      if (state.audio !== audioElement || state.isStopping) return;
       if (nativeResult?.success && state.audio === audioElement && !state.isStopping) {
         audioElement.src = '';
         state.audio = null;
@@ -1386,6 +1397,7 @@ function createStreamErrorHandler({ station, streamUrl, audioElement, contentTyp
     }
     
     if (retryState.retryCount >= retryState.maxRetries && await tryRecoverStation(station, streamUrl)) return;
+    if (state.audio !== audioElement || state.isStopping) return;
     state.isPlaying = false;
     state.audio = null;
     state.stationHealth[station.id] = false;
@@ -1870,6 +1882,7 @@ function togglePlay() {
 
 // Остановка воспроизведения
 function stopPlay() {
+  ++state.playbackRequest;
   // Отключить эквалайзер
   if (state.equalizer) {
     state.equalizer.disconnect();
@@ -2192,6 +2205,8 @@ async function checkForUpdates() {
   const install = document.getElementById('installUpdateBtn');
   const button = document.getElementById('checkUpdateBtn');
   const badge = document.getElementById('updateBadge');
+  const link = document.getElementById('updateLink');
+  const linkText = document.getElementById('updateLinkText');
   // Повторный клик во время уже идущей проверки не нужен.
   if (!status || !install || checkingUpdate) return;
   checkingUpdate = true;
@@ -2225,6 +2240,7 @@ async function checkForUpdates() {
     // Обновлений нет — бейдж гасим (в т.ч. если в этой же сессии он уже
     // успел загореться, а релиз тем временем сняли/переименовали).
     if (badge) badge.hidden = true;
+    if (link) link.hidden = true;
     status.textContent = t('Установлена последняя версия.') + stamp;
     return;
   }
@@ -2235,6 +2251,13 @@ async function checkForUpdates() {
   if (badge) {
     badge.hidden = false;
     badge.title = t('Доступна версия {version}.', { version: result.version });
+  }
+  // Ссылка в шапке рядом с названием плеера (просьба 2026-10-18). Текст
+  // собираем здесь же: data-i18n у ссылки нет — она существует только при
+  // найденном обновлении, а версия подставляется динамически.
+  if (link && linkText) {
+    linkText.textContent = t('Доступно обновление {version}', { version: result.version });
+    link.hidden = false;
   }
   status.textContent = t('Доступна версия {version}.', { version: result.version }) + stamp;
   install.textContent = t('Обновить до {version}', { version: result.version });
@@ -2302,6 +2325,22 @@ function handleUpdateProgress(detail) {
   // полосу заново.
   if (!installingUpdate) return;
   renderUpdateProgress(detail);
+}
+
+// Просьба 2026-10-18: клик по ссылке в шапке — окно закрывается сразу, а
+// закачку и установку ведёт уже отдельный процесс (curl в фоне):350+ МБ
+// при открытом окне, за которым нечего смотреть, больше не ждём.
+let closingForUpdate = false;
+async function closeAndInstallUpdate() {
+  if (!availableUpdate?.url || closingForUpdate) return;
+  closingForUpdate = true;
+  const result = await window.AppAPI.closeAndUpdate(availableUpdate.url);
+  if (result?.success === false) {
+    // Хост отклонил ссылку или не смог поднять загрузчик — окно остаётся
+    // открытым, флаг снимаем, чтобы повторная попытка была возможна.
+    closingForUpdate = false;
+    showToast(t('Не удалось запустить обновление.'));
+  }
 }
 
 async function searchOnlineStations() {
@@ -2388,7 +2427,7 @@ async function searchOnlineStations() {
           const station = { id: `user-online-${found.stationuuid || Date.now()}`, name: found.name, url, primaryUrl: url, backupUrls, country: found.countrycode || 'OTHER', genre: (found.tags || 'Other').split(',')[0], image: found.favicon || '', source: found.source || 'Radio Browser' };
           state.stations.push(station);
           state.stationHealth[station.id] = true;
-          await saveData();
+          if (!await saveData()) return;
           document.getElementById('filterSelect').value = 'all';
           loadStations();
         }
@@ -2448,6 +2487,7 @@ function escapeHtml(value) {
 
 async function tryRecoverStation(station, failedUrl) {
   if (state.isRecoveringStream) return false;
+  const request = state.playbackRequest;
   state.isRecoveringStream = true;
   try {
     const expected = normalizedStationName(station.name);
@@ -2456,15 +2496,18 @@ async function tryRecoverStation(station, failedUrl) {
       .filter(s => !station.country || station.country === 'OTHER' || s.countrycode === station.country)
       .map(s => s.url_resolved || s.url)
       .filter(url => url && url !== failedUrl);
+    if (request !== state.playbackRequest) return false;
 
     for (const url of [...new Set(candidates)].slice(0, 5)) {
-      if ((await window.AppAPI.checkStream(url))?.success) {
+      const checked = await window.AppAPI.checkStream(url);
+      if (request !== state.playbackRequest) return false;
+      if (checked?.success) {
         station.primaryUrl ||= failedUrl;
         station.backupUrls = [...new Set([...(station.backupUrls || []), url])];
         station.url = url;
         station.incompatible = false;
         state.stationHealth[station.id] = true;
-        await saveData();
+        if (!await saveData() || request !== state.playbackRequest) return false;
         state.isRecoveringStream = false;
         playStation(station);
         return true;
@@ -2502,6 +2545,10 @@ function setupEventListeners() {
   });
   document.getElementById('checkUpdateBtn')?.addEventListener('click', checkForUpdates);
   document.getElementById('installUpdateBtn')?.addEventListener('click', installAvailableUpdate);
+  document.getElementById('updateLink')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeAndInstallUpdate();
+  });
   document.getElementById('onlineSearchBtn')?.addEventListener('click', searchOnlineStations);
   document.getElementById('clearOnlineSearchBtn')?.addEventListener('click', clearOnlineSearch);
   document.getElementById('backToStationsBtn')?.addEventListener('click', () => switchTab('stations'));
@@ -3322,7 +3369,7 @@ async function addStation() {
   state.stations.push(newStation);
   
   try {
-    await saveData();
+    if (!await saveData()) return;
     messageEl.textContent = t('Станция успешно добавлена!');
     messageEl.className = 'message success';
     
@@ -3448,12 +3495,11 @@ async function updateStation(stationId) {
   
   // Сохранить изменения
   try {
-    await saveData();
+    if (!await saveData()) return;
     // Отредактированная предустановленная — в журнал stationMods: при обновлении
     // каталога (новая версия stations.js) её версия не заменится копией из
     // каталога — правка останется.
-    await markCatalogMod(stationId, 'edited').catch(err =>
-      console.error('Не удалось записать пометку правки:', err));
+    await markCatalogMod(stationId, 'edited');
 
     messageEl.textContent = t('Станция успешно обновлена и сохранена!');
     messageEl.className = 'message success';
@@ -3487,7 +3533,7 @@ async function markCatalogMod(stationId, mark) {
   const mods = (await window.AppAPI.getStationMods()) || {};
   if (mods[stationId] === mark) return;
   mods[stationId] = mark;
-  await window.AppAPI.saveStationMods(mods);
+  if (!await window.AppAPI.saveStationMods(mods)) throw new Error('stationMods');
 }
 
 // Удаление станции
@@ -3521,11 +3567,10 @@ async function deleteStation(stationId) {
   
   // Сохранить изменения
   try {
-    await saveData();
+    if (!await saveData()) return;
     // Удалённая предустановленная — в журнал stationMods: без пометки 'removed'
     // следующий перезапуск вернёт её из каталога (жалоба 2026-10-11).
-    await markCatalogMod(stationId, 'removed').catch(err =>
-      console.error('Не удалось записать пометку удаления:', err));
+    await markCatalogMod(stationId, 'removed');
 
     // Обновить список станций
     loadStations();
@@ -3588,7 +3633,7 @@ function applyTheme(theme) {
 }
 
 // Сохранение настроек
-function saveSettings() {
+async function saveSettings() {
   state.settings.minimizeToTray = document.getElementById('minimizeToTray').checked;
   state.settings.startMinimized = document.getElementById('startMinimized').checked;
   state.settings.editMode = document.getElementById('editMode').checked;
@@ -3599,7 +3644,7 @@ function saveSettings() {
   } else {
     applyTheme(state.settings.theme);
   }
-  saveData();
+  if (!await saveData()) return;
   
   // Обновить список станций чтобы показать/скрыть кнопки редактирования
   loadStations();
@@ -3708,13 +3753,26 @@ async function importStations() {
     const result = await window.AppAPI.importStations();
     
     if (result.success) {
-      let message = t('Импортировано станций: {imported}\nВсего станций: {total}', { imported: result.imported, total: result.total });
-      if (result.skipped && result.skipped > 0) {
-        message += '\n' + t('Пропущено дубликатов: {skipped}', { skipped: result.skipped });
+      const urls = new Set(state.stations.map(s => StationCleanup.urlKey(s.url)));
+      const added = result.imported.filter(station => {
+        const key = StationCleanup.urlKey(station.url);
+        if (urls.has(key)) return false;
+        urls.add(key);
+        return true;
+      });
+      const stations = [...state.stations, ...added];
+      if (added.length && !await window.AppAPI.saveStations(stations)) {
+        showToast(t('Ошибка импорта: {error}', { error: t('Неизвестная ошибка') }), 'error');
+        return;
+      }
+      state.stations = stations;
+      const skipped = result.imported.length - added.length;
+      let message = t('Импортировано станций: {imported}\nВсего станций: {total}', { imported: added.length, total: stations.length });
+      if (skipped > 0) {
+        message += '\n' + t('Пропущено дубликатов: {skipped}', { skipped });
       }
       showToast(message, 'success');
-      // Перезагрузить данные и обновить список
-      await loadData();
+      // Показать уже сохранённый список без повторной загрузки настроек.
       loadStations();
     } else if (!result.canceled) {
       showToast(t('Ошибка импорта: {error}', { error: result.error || t('Неизвестная ошибка') }), 'error');

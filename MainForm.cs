@@ -27,6 +27,8 @@ namespace CatLuRadio
         private readonly SemaphoreSlim storeLock = new(1, 1);
         private long storeSaveSeq;   // последний выданный номер сохранения
         private long storeSavedSeq;  // последний реально записанный на диск
+        private bool closePending;
+        private bool closeReady;
         // Идёт закачка установщика обновления: защита от второго клика
         // (второй параллельный закаччик = два установщика и «не срабатывает»).
         private volatile bool updateDownloading;
@@ -232,23 +234,23 @@ namespace CatLuRadio
         /// Снимок берётся здесь же, в UI-потоке: storeData мутируется только в нём,
         /// а Newtonsoft JObject не потокобезопасен при одновременных чтении и записи.
         /// </summary>
-        private void RequestSaveStore()
+        private Task<bool> RequestSaveStore()
         {
             long seq = Interlocked.Increment(ref storeSaveSeq);
             string snapshot = storeData.ToString(Formatting.None);
-            _ = SaveStoreAsync(seq, snapshot);
+            return SaveStoreAsync(seq, snapshot);
         }
 
-        private async Task SaveStoreAsync(long seq, string snapshot)
+        private async Task<bool> SaveStoreAsync(long seq, string snapshot)
         {
             // Уже есть запись более нового состояния — эта стала бы откатом.
-            if (seq <= Volatile.Read(ref storeSavedSeq)) return;
+            if (seq <= Volatile.Read(ref storeSavedSeq)) return true;
 
             string storePath = Path.Combine(dataPath, StoreFileName);
             await storeLock.WaitAsync();
             try
             {
-                if (seq <= Volatile.Read(ref storeSavedSeq)) return;
+                if (seq <= Volatile.Read(ref storeSavedSeq)) return true;
 
                 // Пишем во временный файл и подменяем: падение посреди записи
                 // больше не оставляет обрезанный файл хранилища.
@@ -256,12 +258,12 @@ namespace CatLuRadio
                 await File.WriteAllTextAsync(tempPath, snapshot, Encoding.UTF8);
                 File.Move(tempPath, storePath, overwrite: true);
                 Volatile.Write(ref storeSavedSeq, seq);
+                return true;
             }
             catch (Exception ex)
             {
-                // Задача выполняется без await: без этого catch исключение терялось бы
-                // полностью (теперь ещё и ловится UnobservedTaskException в Program.cs).
                 AppLog.Error("Не удалось сохранить хранилище " + storePath, ex);
+                return false;
             }
             finally
             {
@@ -269,7 +271,7 @@ namespace CatLuRadio
             }
         }
 
-        private void WebView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        private async void WebView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             JObject? data = null;
             try
@@ -278,6 +280,10 @@ namespace CatLuRadio
                 data = JObject.Parse(message);
                 string action = data["action"]?.ToString() ?? "";
                 string callbackId = data["callbackId"]?.ToString() ?? "";
+                if (closePending) {
+                    SendCallback(callbackId, new { success = false, error = "Приложение закрывается" });
+                    return;
+                }
                 
                 switch (action)
                 {
@@ -292,8 +298,8 @@ namespace CatLuRadio
                     case "setStore":
                         key = data["key"]?.ToString() ?? "";
                         storeData[key] = data["value"];
-                        RequestSaveStore();
-                        SendCallback(callbackId, new { success = true });
+                        bool saved = await RequestSaveStore();
+                        SendCallback(callbackId, new { success = saved });
                         break;
                     case "log":
                         // Диагностика со страницы: консоль WebView2 пользователю
@@ -310,6 +316,11 @@ namespace CatLuRadio
                         break;
                     case "installUpdate":
                         _ = InstallUpdate(data["url"]?.ToString() ?? "", callbackId);
+                        break;
+                    case "closeAndUpdate":
+                        // Ответ шлёт сам метод: успех заканчивается закрытием
+                        // окна, поэтому типовой SendCallback здесь не нужен.
+                        CloseAndUpdate(data["url"]?.ToString() ?? "", callbackId);
                         break;
                     case "checkStream":
                         _ = CheckStream(data["url"]?.ToString() ?? "", callbackId);
@@ -430,6 +441,7 @@ namespace CatLuRadio
             }
         }
         private void SendCallback(string callbackId, object result) {
+            if (IsDisposed || Disposing || closeReady) return;
             if (InvokeRequired) { Invoke(() => SendCallback(callbackId, result)); return; }
             webView.CoreWebView2.PostWebMessageAsString(JsonConvert.SerializeObject(new { callbackId, resultRaw = result }));
         }
@@ -511,6 +523,34 @@ namespace CatLuRadio
             }
         }
 
+        // Просьба 2026-10-18: клик по ссылке «Доступно обновление» в шапке —
+        // окно закрывается сразу, а закачку и установку ведёт уже отдельный
+        // процесс:350+ МБ при открытом окне, за которым нечего смотреть,
+        // больше не ждём (прежний InstallUpdate с полосой прогресса остаётся
+        // для кнопки в Настройках → Система).
+        private void CloseAndUpdate(string url, string callbackId) {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !url.StartsWith(UpdateAssetPrefix, StringComparison.OrdinalIgnoreCase)) {
+                SendCallback(callbackId, new { success = false, error = "Некорректная ссылка обновления" });
+                return;
+            }
+            var installerPath = Path.Combine(Path.GetTempPath(), $"CatLuRadio-update-{Guid.NewGuid():N}.exe");
+            try {
+                // cmd скрыт (CreateNoWindow — иначе у WinExe мелькнет консоль),
+                // curl входит в Windows 10+: качает уже после нашего выхода и
+                // запускает установщик, когда файл готов.
+                var args = $"/c curl -L --fail --retry 3 -o \"{installerPath}\" \"{url}\" && start \"\" \"{installerPath}\"";
+                using var proc = Process.Start(new ProcessStartInfo("cmd.exe", args) { UseShellExecute = false, CreateNoWindow = true });
+                if (proc is null) throw new InvalidOperationException("Процесс фонового загрузчика не запустился");
+                AppLog.Info($"Обновление: фоновый загрузчик запущен, окно закрывается. url={url}");
+                SendCallback(callbackId, new { success = true });
+                // Пауза перед закрытием — PostWebMessage успевает дойти до страницы.
+                _ = Task.Run(async () => { await Task.Delay(300); BeginInvoke(Close); });
+            } catch (Exception ex) {
+                AppLog.Error("Обновление: не удалось запустить фоновый загрузчик", ex);
+                SendCallback(callbackId, new { success = false, error = ex.Message });
+            }
+        }
+
         // Проценты скачивания обновления — в страницу: полоса прогресса идёт
         // на глазах, вместо «ничего не происходит» минуты.
         private void SendUpdateProgress(int percent, long received, long total) {
@@ -541,20 +581,28 @@ namespace CatLuRadio
                 SendCallback(callbackId, new ApiResponse { Success = false, Error = "Некорректный URL" });
                 return;
             }
+            var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             try {
                 StopNative();
                 nativePlayer.Volume = (int)Math.Round(Math.Clamp(volume, 0, 1) * 100);
                 nativeMedia = new Media(nativeVlc, uri);
-                nativeStart = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                nativeStart = start;
                 if (!nativePlayer.Play(nativeMedia)) throw new InvalidOperationException("LibVLC не смог открыть поток.");
-                var completed = await Task.WhenAny(nativeStart.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-                if (completed == nativeStart.Task && await nativeStart.Task) {
+                var completed = await Task.WhenAny(start.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+                if (!ReferenceEquals(nativeStart, start)) {
+                    SendCallback(callbackId, new { success = false, canceled = true });
+                    return;
+                }
+                if (completed == start.Task && await start.Task) {
                     SendCallback(callbackId, new { success = true });
                     return;
                 }
                 StopNative();
                 SendCallback(callbackId, new { success = false, error = "LibVLC не начал воспроизведение." });
-            } catch (Exception ex) { StopNative(); SendCallback(callbackId, new { success = false, error = ex.Message }); }
+            } catch (Exception ex) {
+                if (ReferenceEquals(nativeStart, start)) StopNative();
+                SendCallback(callbackId, new { success = false, error = ex.Message });
+            }
         }
         private void StopNative() {
             nativeStart?.TrySetResult(false);
@@ -703,20 +751,26 @@ namespace CatLuRadio
                 SendCallback(callbackId, new ApiResponse { Success = true, Content = content });
             } catch (Exception ex) { SendCallback(callbackId, new ApiResponse { Success = false, Error = ex.Message }); }
         }
-        protected override void OnFormClosing(FormClosingEventArgs e) {
+        protected override async void OnFormClosing(FormClosingEventArgs e) {
             base.OnFormClosing(e);
-            // Ждём незавершённых записей (коротко: приложение закрывается),
-            // иначе финальная запись могла бы конфликтовать с пишущейся задачей.
-            bool locked = storeLock.Wait(TimeSpan.FromSeconds(2));
-            try {
-                string storePath = Path.Combine(dataPath, StoreFileName);
-                File.WriteAllText(storePath + ".tmp", storeData.ToString(), Encoding.UTF8);
-                File.Move(storePath + ".tmp", storePath, overwrite: true);
-                // Все сохранения, выданные до этого момента, устарели.
-                Volatile.Write(ref storeSavedSeq, Volatile.Read(ref storeSaveSeq));
+            if (e.Cancel) return;
+            if (!closeReady) {
+                e.Cancel = true;
+                if (closePending) return;
+                closePending = true;
+                webView.Enabled = false;
+                // Не блокируем UI-поток: на нём продолжаются ожидающие записи.
+                if (!await RequestSaveStore()) {
+                    closePending = false;
+                    webView.Enabled = true;
+                    MessageBox.Show("Не удалось сохранить данные. Окно оставлено открытым.\nПодробности: " + AppLog.CurrentPath,
+                        "CatLu Radio NET", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                closeReady = true;
+                BeginInvoke(Close);
+                return;
             }
-            catch (Exception ex) { AppLog.Error("Не удалось сохранить хранилище при выходе", ex); }
-            finally { if (locked) storeLock.Release(); }
             httpClient.Dispose();
             StopNative();
             nativeEqualizer?.Dispose();

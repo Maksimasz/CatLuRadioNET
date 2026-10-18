@@ -250,6 +250,9 @@ window.AppAPI = {
     saveHistory: (h) => WebView2API.set('history', h),
     checkForUpdate: () => sendToNative('checkForUpdate'),
     installUpdate: (url) => sendToNative('installUpdate', { url }),
+    // Закрыть окно и отдать закачку обновления фоновому процессу (просьба
+    // 2026-10-18) — см. MainForm.CloseAndUpdate.
+    closeAndUpdate: (url) => sendToNative('closeAndUpdate', { url }),
     checkStream: (url) => WebView2API.checkStream(url),
     playNative: (url, volume) => WebView2API.playNative(url, volume),
     pauseNative: () => WebView2API.pauseNative(),
@@ -414,7 +417,9 @@ window.AppAPI = {
         });
         const result = await WebView2API.showSaveDialog({ defaultPath: 'CatLu-radio-stations.json' });
         if (!result.canceled && result.filePath) {
-            await WebView2API.writeFile(result.filePath, JSON.stringify(exportData, null, 2));
+            if (!await WebView2API.writeFile(result.filePath, JSON.stringify(exportData, null, 2))) {
+                return { success: false, error: 'Не удалось записать файл' };
+            }
             return { success: true, path: result.filePath };
         }
         return { success: false, canceled: true };
@@ -429,15 +434,23 @@ window.AppAPI = {
         if (!content) return { success: false, error: 'Не удалось прочитать файл' };
         try {
             const data = JSON.parse(content);
+            if (!data || !data.stations || typeof data.stations !== 'object') {
+                return { success: false, error: 'Неверный формат списка станций' };
+            }
             const imported = [];
             if (data.stations) {
                 Object.keys(data.stations).forEach(id => {
                     const s = data.stations[id];
                     const url = s.streams?.['0'] || s.streams?.[0] || s.url;
                     if (url) {
+                        if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol)) {
+                            throw new Error('Неверный URL станции');
+                        }
+                        const name = s.title || s.name || 'Station';
+                        if (typeof name !== 'string') throw new Error('Неверное название станции');
                         imported.push({
                             id: `imported_${id}_${Date.now()}`,
-                            name: s.title || s.name || 'Station',
+                            name,
                             url,
                             country: 'OTHER',
                             genre: 'Other',
