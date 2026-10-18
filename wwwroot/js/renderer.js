@@ -3719,7 +3719,7 @@ function setupIPCListeners() {
   });
   
   register('onShowAbout', () => {
-    showToast(t('CatLu Radio NET v3.5.10\n\nПриложение для прослушивания интернет-радио.'), 'info');
+    showToast(t('CatLu Radio NET v3.5.11\n\nПриложение для прослушивания интернет-радио.'), 'info');
   });
   
   // При выгрузке страницы помечаем закрытие: stopPlay() в этом случае не
