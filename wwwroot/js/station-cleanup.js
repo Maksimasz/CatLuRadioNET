@@ -22,6 +22,12 @@ const StationCleanup = (function () {
   // из приложения убран, такие станции вычищаются в loadData() до чистки.
   const USER_ID_PREFIXES = ['user-', 'imported_'];
 
+  function urlKey(value) {
+    const url = String(value || '').trim();
+    // URL нормализует схему и хост, сохраняя регистр пути и параметров.
+    try { return new URL(url).href; } catch { return url; }
+  }
+
   // Пользовательская станция — или избранная? Чистка такие не трогает.
   function isUserAdded(station, favoriteIds) {
     const id = station && station.id;
@@ -57,7 +63,7 @@ const StationCleanup = (function () {
 
     for (const station of stations) {
       const id = station.id || '';
-      const url = String(station.url || '').toLowerCase().trim();
+      const url = urlKey(station.url);
       const idHolder = id ? byId.get(id) : undefined;
       const urlHolder = url ? byUrl.get(url) : undefined;
       const holders = [idHolder, urlHolder].filter(Boolean);
@@ -88,7 +94,7 @@ const StationCleanup = (function () {
     };
   }
 
-  return { USER_ID_PREFIXES, isUserAdded, isPreset, dedupe };
+  return { USER_ID_PREFIXES, isUserAdded, isPreset, dedupe, urlKey };
 })();
 
 // Классический скрипт: браузеру — глобальный модуль, Node — на экспорт

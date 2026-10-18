@@ -7,7 +7,7 @@ if (!source.includes('if (state.isPlaying) return;')) throw new Error('Нет з
 if (!source.includes('function rememberLastStation') || !source.includes('if (!state.isClosing) clearLastStation();')) throw new Error('Автозапуск последней станции не различает остановку и закрытие');
 if (source.includes('setTimeout(checkAllStations, 1500)')) throw new Error('Массовая проверка мешает автозапуску');
 if (!source.includes('autoPlayLastStation();\n  }, 2000);')) throw new Error('Автозапуск начинается до инициализации WebView2');
-if (!source.includes('await window.AppAPI.stopNative();\n  state.nativeAudio = false;')) throw new Error('libVLC не останавливается перед переключением');
+if (!source.includes('await window.AppAPI.stopNative();\n  if (request !== state.playbackRequest) return;\n  state.nativeAudio = false;')) throw new Error('libVLC не останавливается перед переключением или отмена не проверяется');
 if (!source.includes('const useCrossfade = crossfadeEnabled && state.audio && state.isPlaying;')) throw new Error('Кроссфейд выключен');
 if (!source.includes('setTimeout(stopOldAudio, crossfadeDuration + 500);')) throw new Error('Старый поток не останавливается после кроссфейда');
 if (!source.includes('terminalErrorPending')) throw new Error('Нет блокировки повторной финальной ошибки');
